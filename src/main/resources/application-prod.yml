@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    com.bedok: INFO
+    org.springframework.security: WARN
