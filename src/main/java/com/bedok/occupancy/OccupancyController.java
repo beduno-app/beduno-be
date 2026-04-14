@@ -1,12 +1,18 @@
 package com.bedok.occupancy;
 
+import com.bedok.occupancy.dto.InspectionDiscrepancyResponse;
+import com.bedok.occupancy.dto.InspectionReportRequest;
+import com.bedok.occupancy.dto.InspectionRoomEntry;
 import com.bedok.occupancy.dto.OccupancyExceptionResponse;
 import com.bedok.occupancy.dto.RoomOccupancyResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,5 +42,23 @@ public class OccupancyController {
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
         return ResponseEntity.ok(occupancyService.getExceptions(propertyId, date != null ? date : LocalDate.now()));
+    }
+
+    @GetMapping("/inspection")
+    @PreAuthorize("hasRole('PROPERTY_ADMIN')")
+    public ResponseEntity<List<InspectionRoomEntry>> getInspectionRoster(
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) LocalDate date) {
+        return ResponseEntity.ok(occupancyService.getInspectionRoster(propertyId, date != null ? date : LocalDate.now()));
+    }
+
+    @PostMapping("/inspection")
+    @PreAuthorize("hasRole('PROPERTY_ADMIN')")
+    public ResponseEntity<InspectionDiscrepancyResponse> submitInspectionReport(
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) LocalDate date,
+            @Valid @RequestBody InspectionReportRequest request) {
+        return ResponseEntity.ok(occupancyService.submitInspectionReport(
+                propertyId, date != null ? date : LocalDate.now(), request));
     }
 }

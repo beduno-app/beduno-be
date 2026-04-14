@@ -1,9 +1,15 @@
 package com.bedok.occupancy;
 
 import com.bedok.common.security.TenantContext;
+import com.bedok.occupancy.dto.InspectionDiscrepancyResponse;
+import com.bedok.occupancy.dto.InspectionReportRequest;
+import com.bedok.occupancy.dto.InspectionRoomEntry;
 import com.bedok.occupancy.dto.OccupancyExceptionResponse;
 import com.bedok.occupancy.dto.OccupantSummary;
+import com.bedok.occupancy.dto.RoomActualOccupancy;
+import com.bedok.occupancy.dto.RoomDiscrepancy;
 import com.bedok.occupancy.dto.RoomOccupancyResponse;
+import com.bedok.occupancy.dto.WorkerDiscrepancy;
 import com.bedok.property.PropertyRepository;
 import com.bedok.room.RoomRepository;
 import com.bedok.stay.Stay;
@@ -93,6 +99,74 @@ public class OccupancyService {
             }
         }
         return exceptions;
+    }
+
+    @Transactional(readOnly = true)
+    public List<InspectionRoomEntry> getInspectionRoster(UUID propertyId, LocalDate date) {
+        var agencyId = TenantContext.requireAgencyId();
+        var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
+        var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, ACTIVE_STATUSES);
+        var workerMap = loadWorkers(stays, agencyId);
+
+        var checkedInByRoom = stays.stream()
+                .filter(s -> s.getStatus() == StayStatus.CHECKED_IN)
+                .collect(Collectors.groupingBy(Stay::getRoomId));
+        var allActiveByRoom = stays.stream()
+                .collect(Collectors.groupingBy(Stay::getRoomId));
+
+        return rooms.stream().map(room -> {
+            var allActive = allActiveByRoom.getOrDefault(room.getId(), List.of());
+            var checkedIn = checkedInByRoom.getOrDefault(room.getId(), List.of());
+            return new InspectionRoomEntry(
+                    room.getId(),
+                    room.getName(),
+                    room.getFloor(),
+                    toOccupantSummaries(allActive, workerMap),
+                    toOccupantSummaries(checkedIn, workerMap)
+            );
+        }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public InspectionDiscrepancyResponse submitInspectionReport(UUID propertyId,
+                                                                LocalDate date,
+                                                                InspectionReportRequest request) {
+        var agencyId = TenantContext.requireAgencyId();
+        var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
+        var stays = stayRepository.findActiveStaysForPropertyOnDate(
+                agencyId, propertyId, date, List.of(StayStatus.CHECKED_IN));
+        var workerMap = loadWorkers(stays, agencyId);
+
+        var checkedInByRoom = stays.stream()
+                .collect(Collectors.groupingBy(Stay::getRoomId));
+        var roomNameById = rooms.stream()
+                .collect(Collectors.toMap(r -> r.getId(), r -> r.getName()));
+
+        var reportByRoomId = request.rooms().stream()
+                .collect(Collectors.toMap(RoomActualOccupancy::roomId, RoomActualOccupancy::presentWorkerIds));
+
+        var discrepancies = new ArrayList<RoomDiscrepancy>();
+        for (var roomId : roomNameById.keySet()) {
+            var expectedStays = checkedInByRoom.getOrDefault(roomId, List.of());
+            var presentWorkerIds = reportByRoomId.getOrDefault(roomId, List.of());
+            var expectedWorkerIds = expectedStays.stream().map(Stay::getWorkerId).collect(Collectors.toSet());
+
+            var items = new ArrayList<WorkerDiscrepancy>();
+            for (var expectedId : expectedWorkerIds) {
+                if (!presentWorkerIds.contains(expectedId)) {
+                    items.add(new WorkerDiscrepancy(expectedId, "EXPECTED_NOT_PRESENT"));
+                }
+            }
+            for (var presentId : presentWorkerIds) {
+                if (!expectedWorkerIds.contains(presentId)) {
+                    items.add(new WorkerDiscrepancy(presentId, "UNEXPECTED_PRESENT"));
+                }
+            }
+            if (!items.isEmpty()) {
+                discrepancies.add(new RoomDiscrepancy(roomId, roomNameById.get(roomId), items));
+            }
+        }
+        return new InspectionDiscrepancyResponse(discrepancies, !discrepancies.isEmpty());
     }
 
     private Map<UUID, Worker> loadWorkers(List<Stay> stays, UUID agencyId) {
