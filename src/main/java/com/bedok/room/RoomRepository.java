@@ -11,6 +11,8 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 
     Page<Room> findAllByAgencyIdAndPropertyId(UUID agencyId, UUID propertyId, Pageable pageable);
 
+    Optional<Room> findByIdAndAgencyId(UUID id, UUID agencyId);
+
     Optional<Room> findByIdAndAgencyIdAndPropertyId(UUID id, UUID agencyId, UUID propertyId);
 
     boolean existsByPropertyIdAndName(UUID propertyId, String name);
