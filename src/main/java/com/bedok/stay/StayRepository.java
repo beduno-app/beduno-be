@@ -82,6 +82,19 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
     List<Stay> findPlannedArrivingOn(@Param("date") LocalDate date);
 
     @Query("""
+            SELECT s FROM Stay s
+            WHERE s.agencyId = :agencyId
+              AND s.propertyId = :propertyId
+              AND s.status = com.bedok.stay.StayStatus.EXPECTED_TODAY
+              AND s.dateFrom = :date
+            """)
+    List<Stay> findArrivals(
+            @Param("agencyId") UUID agencyId,
+            @Param("propertyId") UUID propertyId,
+            @Param("date") LocalDate date
+    );
+
+    @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.workerId = :workerId
               AND s.agencyId = :agencyId

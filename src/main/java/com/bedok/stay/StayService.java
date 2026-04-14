@@ -11,7 +11,10 @@ import com.bedok.room.Room;
 import com.bedok.room.RoomRepository;
 import com.bedok.stay.constraint.ConstraintContext;
 import com.bedok.stay.constraint.ConstraintEngine;
+import com.bedok.common.security.CurrentUser;
+import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CreateStayRequest;
+import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
 import com.bedok.stay.dto.UpdateStayRequest;
 import com.bedok.worker.Worker;
@@ -19,6 +22,7 @@ import com.bedok.worker.WorkerRepository;
 import com.bedok.worker.WorkerStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -96,6 +100,52 @@ public class StayService {
         return stayMapper.toResponse(stay);
     }
 
+    @Transactional(readOnly = true)
+    public List<StayResponse> getArrivals(UUID propertyId, LocalDate date) {
+        var agencyId = TenantContext.requireAgencyId();
+        return stayRepository.findArrivals(agencyId, propertyId, date)
+                .stream().map(stayMapper::toResponse).toList();
+    }
+
+    @Transactional
+    public StayResponse checkIn(UUID id, CheckInRequest request) {
+        var agencyId = TenantContext.requireAgencyId();
+        var stay = getStayOrThrow(id);
+
+        if (!stay.getStatus().canTransitionTo(StayStatus.CHECKED_IN)) {
+            throw new ConflictException("error.stay.invalid_status_transition");
+        }
+
+        var targetRoomId = request.roomId() != null ? request.roomId() : stay.getRoomId();
+        var room = getRoomOrThrow(targetRoomId, agencyId);
+        var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
+        var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
+
+        var ctx = new ConstraintContext(worker, room, property,
+                stay.getDateFrom(), stay.getDateTo(), stay.getId());
+        runConstraints(ctx, request.overrideReason());
+
+        if (request.roomId() != null) {
+            stay.setRoomId(request.roomId());
+        }
+        stay.setStatus(StayStatus.CHECKED_IN);
+        stay.setConfirmedByUserId(currentUserId());
+        stay = stayRepository.save(stay);
+        return stayMapper.toResponse(stay);
+    }
+
+    @Transactional
+    public StayResponse noShow(UUID id, NoShowRequest request) {
+        var stay = getStayOrThrow(id);
+        if (!stay.getStatus().canTransitionTo(StayStatus.NO_SHOW)) {
+            throw new ConflictException("error.stay.invalid_status_transition");
+        }
+        stay.setStatus(StayStatus.NO_SHOW);
+        stay.setNotes(request.reasonTag());
+        stay = stayRepository.save(stay);
+        return stayMapper.toResponse(stay);
+    }
+
     @Transactional
     public int transitionPlannedToExpectedToday(LocalDate date) {
         var stays = stayRepository.findPlannedArrivingOn(date);
@@ -140,6 +190,11 @@ public class StayService {
 
     private Map<String, Object> toStringMap(Map<String, Object> params) {
         return params;
+    }
+
+    private UUID currentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return ((CurrentUser) auth.getPrincipal()).userId();
     }
 
     private Stay getStayOrThrow(UUID id) {

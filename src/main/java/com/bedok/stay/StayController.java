@@ -1,7 +1,9 @@
 package com.bedok.stay;
 
 import com.bedok.common.model.PageResponse;
+import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CreateStayRequest;
+import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
 import com.bedok.stay.dto.UpdateStayRequest;
 import jakarta.validation.Valid;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -48,6 +51,28 @@ public class StayController {
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(stayService.findById(id));
+    }
+
+    @GetMapping("/arrivals")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<List<StayResponse>> getArrivals(
+            @RequestParam UUID propertyId,
+            @RequestParam(required = false) LocalDate date) {
+        return ResponseEntity.ok(stayService.getArrivals(propertyId, date != null ? date : LocalDate.now()));
+    }
+
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<StayResponse> checkIn(@PathVariable UUID id,
+                                                @Valid @RequestBody CheckInRequest request) {
+        return ResponseEntity.ok(stayService.checkIn(id, request));
+    }
+
+    @PostMapping("/{id}/no-show")
+    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<StayResponse> noShow(@PathVariable UUID id,
+                                               @Valid @RequestBody NoShowRequest request) {
+        return ResponseEntity.ok(stayService.noShow(id, request));
     }
 
     @PostMapping
