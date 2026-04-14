@@ -85,6 +85,21 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             SELECT s FROM Stay s
             WHERE s.agencyId = :agencyId
               AND s.propertyId = :propertyId
+              AND s.status IN :statuses
+              AND s.dateFrom <= :date
+              AND (s.dateTo IS NULL OR s.dateTo > :date)
+            """)
+    List<Stay> findActiveStaysForPropertyOnDate(
+            @Param("agencyId") UUID agencyId,
+            @Param("propertyId") UUID propertyId,
+            @Param("date") LocalDate date,
+            @Param("statuses") List<StayStatus> statuses
+    );
+
+    @Query("""
+            SELECT s FROM Stay s
+            WHERE s.agencyId = :agencyId
+              AND s.propertyId = :propertyId
               AND s.status = com.bedok.stay.StayStatus.EXPECTED_TODAY
               AND s.dateFrom = :date
             """)
