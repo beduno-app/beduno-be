@@ -97,6 +97,14 @@ public class StayService {
     }
 
     @Transactional
+    public int transitionPlannedToExpectedToday(LocalDate date) {
+        var stays = stayRepository.findPlannedArrivingOn(date);
+        stays.forEach(s -> s.setStatus(StayStatus.EXPECTED_TODAY));
+        stayRepository.saveAll(stays);
+        return stays.size();
+    }
+
+    @Transactional
     public void cancel(UUID id) {
         var stay = getStayOrThrow(id);
         if (!stay.getStatus().canTransitionTo(StayStatus.CANCELLED)) {

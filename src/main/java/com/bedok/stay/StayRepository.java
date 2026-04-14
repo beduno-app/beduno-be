@@ -78,6 +78,9 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("excludeId") UUID excludeId
     );
 
+    @Query("SELECT s FROM Stay s WHERE s.status = com.bedok.stay.StayStatus.PLANNED AND s.dateFrom = :date")
+    List<Stay> findPlannedArrivingOn(@Param("date") LocalDate date);
+
     @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.workerId = :workerId
