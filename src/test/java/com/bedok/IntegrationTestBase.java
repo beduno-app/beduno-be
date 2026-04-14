@@ -18,6 +18,7 @@ public abstract class IntegrationTestBase {
 
     protected static final UUID DEFAULT_AGENCY_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     protected static final UUID OTHER_AGENCY_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    protected static final UUID DEFAULT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
 
     static final PostgreSQLContainer<?> postgres;
 
@@ -53,7 +54,7 @@ public abstract class IntegrationTestBase {
         try {
             var idField = com.bedok.common.model.BaseEntity.class.getDeclaredField("id");
             idField.setAccessible(true);
-            idField.set(user, UUID.randomUUID());
+            idField.set(user, DEFAULT_USER_ID);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
@@ -76,6 +77,14 @@ public abstract class IntegrationTestBase {
         jdbcTemplate.update(
                 "INSERT INTO agencies (id, name, status) VALUES (?, ?, 'ACTIVE') ON CONFLICT (id) DO NOTHING",
                 agencyId, "Agency " + agencyId
+        );
+    }
+
+    protected void ensureUserExists(UUID userId, UUID agencyId) {
+        jdbcTemplate.update(
+                "INSERT INTO users (id, agency_id, email, password_hash, first_name, last_name, role, language, status) " +
+                "VALUES (?, ?, ?, 'hash', 'Test', 'User', 'AGENCY_ADMIN', 'EN', 'ACTIVE') ON CONFLICT (id) DO NOTHING",
+                userId, agencyId, "user-" + userId + "@test.com"
         );
     }
 }

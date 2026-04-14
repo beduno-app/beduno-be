@@ -171,7 +171,6 @@ public class StayService {
         runConstraints(ctx, request.overrideReason());
 
         stay.setStatus(StayStatus.CHECKED_OUT);
-        stay.setDateTo(today);
         stayRepository.save(stay);
 
         var newStay = new Stay();
