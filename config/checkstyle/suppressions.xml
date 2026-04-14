@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Test methods use should{Behavior}_when{Condition} naming convention -->
+    <suppress checks="MethodName" files=".*Test\.java"/>
+
+    <!-- Testcontainers @Container fields are declared as static but use lowerCamelCase by convention -->
+    <suppress checks="ConstantName" files=".*Test(Base)?\.java"/>
+</suppressions>

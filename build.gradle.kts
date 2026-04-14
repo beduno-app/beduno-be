@@ -1,5 +1,6 @@
 plugins {
     java
+    checkstyle
     id("org.springframework.boot") version "3.4.4"
     id("io.spring.dependency-management") version "1.1.7"
 }
@@ -59,6 +60,12 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+checkstyle {
+    toolVersion = "10.21.4"
+    configFile = file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
 }
 
 tasks.withType<Test> {
