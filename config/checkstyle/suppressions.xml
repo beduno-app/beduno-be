@@ -9,4 +9,7 @@
 
     <!-- Testcontainers @Container fields are declared as static but use lowerCamelCase by convention -->
     <suppress checks="ConstantName" files=".*Test(Base)?\.java"/>
+
+    <!-- Builder setter methods intentionally use the same name as the field they set -->
+    <suppress checks="HiddenField" files="TestBuilders\.java"/>
 </suppressions>
