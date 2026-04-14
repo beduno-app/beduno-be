@@ -11,16 +11,26 @@ import java.util.UUID;
 
 public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
-    @Query("""
-            SELECT p FROM Property p
-            WHERE p.agencyId = :agencyId
-            AND (:status IS NULL OR p.status = :status)
-            AND (:search IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
-                 OR LOWER(p.city) LIKE LOWER(CONCAT('%', :search, '%')))
-            """)
+    @Query(value = """
+            SELECT * FROM properties p
+            WHERE p.agency_id = :agencyId
+            AND (CAST(:status AS VARCHAR) IS NULL OR p.status = CAST(:status AS VARCHAR))
+            AND (CAST(:search AS VARCHAR) IS NULL
+                 OR LOWER(p.name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(p.city) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%')))
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM properties p
+            WHERE p.agency_id = :agencyId
+            AND (CAST(:status AS VARCHAR) IS NULL OR p.status = CAST(:status AS VARCHAR))
+            AND (CAST(:search AS VARCHAR) IS NULL
+                 OR LOWER(p.name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(p.city) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%')))
+            """,
+            nativeQuery = true)
     Page<Property> findAllByAgencyIdWithFilters(
             @Param("agencyId") UUID agencyId,
-            @Param("status") PropertyStatus status,
+            @Param("status") String status,
             @Param("search") String search,
             Pageable pageable);
 

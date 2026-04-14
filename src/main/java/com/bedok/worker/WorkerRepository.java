@@ -11,20 +11,33 @@ import java.util.UUID;
 
 public interface WorkerRepository extends JpaRepository<Worker, UUID> {
 
-    @Query("""
-            SELECT w FROM Worker w
-            WHERE w.agencyId = :agencyId
-            AND w.status <> com.bedok.worker.WorkerStatus.DELETED
-            AND (:status IS NULL OR w.status = :status)
-            AND (:gender IS NULL OR w.gender = :gender)
-            AND (:search IS NULL OR LOWER(w.firstName) LIKE LOWER(CONCAT('%', :search, '%'))
-                 OR LOWER(w.lastName) LIKE LOWER(CONCAT('%', :search, '%'))
-                 OR LOWER(w.internalId) LIKE LOWER(CONCAT('%', :search, '%')))
-            """)
+    @Query(value = """
+            SELECT * FROM workers w
+            WHERE w.agency_id = :agencyId
+            AND w.status <> 'DELETED'
+            AND (CAST(:status AS VARCHAR) IS NULL OR w.status = CAST(:status AS VARCHAR))
+            AND (CAST(:gender AS VARCHAR) IS NULL OR w.gender = CAST(:gender AS VARCHAR))
+            AND (CAST(:search AS VARCHAR) IS NULL
+                 OR LOWER(w.first_name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(w.last_name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(w.internal_id) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%')))
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM workers w
+            WHERE w.agency_id = :agencyId
+            AND w.status <> 'DELETED'
+            AND (CAST(:status AS VARCHAR) IS NULL OR w.status = CAST(:status AS VARCHAR))
+            AND (CAST(:gender AS VARCHAR) IS NULL OR w.gender = CAST(:gender AS VARCHAR))
+            AND (CAST(:search AS VARCHAR) IS NULL
+                 OR LOWER(w.first_name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(w.last_name) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%'))
+                 OR LOWER(w.internal_id) LIKE LOWER(CONCAT('%', CAST(:search AS VARCHAR), '%')))
+            """,
+            nativeQuery = true)
     Page<Worker> findAllByAgencyIdWithFilters(
             @Param("agencyId") UUID agencyId,
-            @Param("status") WorkerStatus status,
-            @Param("gender") Gender gender,
+            @Param("status") String status,
+            @Param("gender") String gender,
             @Param("search") String search,
             Pageable pageable);
 

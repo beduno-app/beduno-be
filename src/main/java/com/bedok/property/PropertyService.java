@@ -23,7 +23,10 @@ public class PropertyService {
     @Transactional(readOnly = true)
     public PageResponse<PropertyResponse> findAll(PropertyStatus status, String search, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
-        var page = propertyRepository.findAllByAgencyIdWithFilters(agencyId, status, search, pageable);
+        var page = propertyRepository.findAllByAgencyIdWithFilters(
+                agencyId,
+                status != null ? status.name() : null,
+                search, pageable);
         return PageResponse.of(page.map(propertyMapper::toResponse));
     }
 

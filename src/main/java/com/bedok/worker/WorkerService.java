@@ -32,7 +32,11 @@ public class WorkerService {
                         status != null ? status.name() : null,
                         gender != null ? gender.name() : null,
                         search, tag, pageable)
-                : workerRepository.findAllByAgencyIdWithFilters(agencyId, status, gender, search, pageable);
+                : workerRepository.findAllByAgencyIdWithFilters(
+                        agencyId,
+                        status != null ? status.name() : null,
+                        gender != null ? gender.name() : null,
+                        search, pageable);
 
         return PageResponse.of(page.map(workerMapper::toResponse));
     }

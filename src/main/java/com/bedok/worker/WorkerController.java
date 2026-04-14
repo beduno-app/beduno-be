@@ -38,7 +38,7 @@ public class WorkerController {
             @RequestParam(required = false) Gender gender,
             @RequestParam(required = false) String tag,
             @RequestParam(required = false) String search,
-            @PageableDefault(sort = "lastName", direction = Sort.Direction.ASC) Pageable pageable) {
+            @PageableDefault(sort = "last_name", direction = Sort.Direction.ASC) Pageable pageable) {
         return ResponseEntity.ok(workerService.findAll(status, gender, tag, search, pageable));
     }
 

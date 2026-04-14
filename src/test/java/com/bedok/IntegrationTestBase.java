@@ -17,6 +17,7 @@ import java.util.UUID;
 public abstract class IntegrationTestBase {
 
     protected static final UUID DEFAULT_AGENCY_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    protected static final UUID OTHER_AGENCY_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
     static final PostgreSQLContainer<?> postgres;
 
@@ -40,7 +41,14 @@ public abstract class IntegrationTestBase {
     @Autowired
     protected JwtTokenProvider jwtTokenProvider;
 
+    @Autowired
+    protected org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     protected HttpHeaders authHeaders(Role role, UUID agencyId) {
+        return authHeaders(role, agencyId, new UUID[0]);
+    }
+
+    protected HttpHeaders authHeaders(Role role, UUID agencyId, UUID[] propertyIds) {
         var user = new User();
         try {
             var idField = com.bedok.common.model.BaseEntity.class.getDeclaredField("id");
@@ -52,7 +60,7 @@ public abstract class IntegrationTestBase {
         user.setAgencyId(agencyId);
         user.setRole(role);
         user.setLanguage("EN");
-        user.setAssignedPropertyIds(new UUID[0]);
+        user.setAssignedPropertyIds(propertyIds);
 
         var token = jwtTokenProvider.generateAccessToken(user);
         var headers = new HttpHeaders();
@@ -62,5 +70,12 @@ public abstract class IntegrationTestBase {
 
     protected HttpHeaders authHeaders(Role role) {
         return authHeaders(role, DEFAULT_AGENCY_ID);
+    }
+
+    protected void ensureAgencyExists(UUID agencyId) {
+        jdbcTemplate.update(
+                "INSERT INTO agencies (id, name, status) VALUES (?, ?, 'ACTIVE') ON CONFLICT (id) DO NOTHING",
+                agencyId, "Agency " + agencyId
+        );
     }
 }
