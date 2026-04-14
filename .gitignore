@@ -23,6 +23,7 @@ release.properties
 # Gradle
 .gradle/
 build/
+!gradle/wrapper/gradle-wrapper.jar
 
 # IDE
 .idea/
@@ -43,3 +44,10 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.env.*
+
+# Spring Boot
+*.pid
+
+# Docker
+docker/pgdata/
