@@ -15,6 +15,7 @@ import com.bedok.common.security.CurrentUser;
 import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
+import com.bedok.stay.dto.MoveRequest;
 import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
 import com.bedok.stay.dto.UpdateStayRequest;
@@ -145,6 +146,45 @@ public class StayService {
         stay.setNotes(request.reasonTag());
         stay = stayRepository.save(stay);
         return stayMapper.toResponse(stay);
+    }
+
+    @Transactional
+    public StayResponse move(UUID id, MoveRequest request) {
+        var agencyId = TenantContext.requireAgencyId();
+        var stay = getStayOrThrow(id);
+
+        if (stay.getStatus() != StayStatus.CHECKED_IN) {
+            throw new ConflictException("error.stay.cannot_move_in_current_status");
+        }
+        if (stay.getRoomId().equals(request.targetRoomId())) {
+            throw new ConflictException("error.stay.move_same_room");
+        }
+
+        var targetRoom = getRoomOrThrow(request.targetRoomId(), agencyId);
+        var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
+        var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
+        var today = LocalDate.now();
+
+        var originalDateTo = stay.getDateTo();
+        var ctx = new ConstraintContext(worker, targetRoom, property,
+                today, originalDateTo, stay.getId());
+        runConstraints(ctx, request.overrideReason());
+
+        stay.setStatus(StayStatus.CHECKED_OUT);
+        stay.setDateTo(today);
+        stayRepository.save(stay);
+
+        var newStay = new Stay();
+        newStay.setAgencyId(agencyId);
+        newStay.setWorkerId(stay.getWorkerId());
+        newStay.setPropertyId(stay.getPropertyId());
+        newStay.setRoomId(request.targetRoomId());
+        newStay.setDateFrom(today);
+        newStay.setDateTo(originalDateTo);
+        newStay.setStatus(StayStatus.CHECKED_IN);
+        newStay.setConfirmedByUserId(currentUserId());
+        newStay = stayRepository.save(newStay);
+        return stayMapper.toResponse(newStay);
     }
 
     @Transactional

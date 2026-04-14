@@ -4,6 +4,7 @@ import com.bedok.common.model.PageResponse;
 import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
+import com.bedok.stay.dto.MoveRequest;
 import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
 import com.bedok.stay.dto.UpdateStayRequest;
@@ -81,6 +82,13 @@ public class StayController {
     public ResponseEntity<StayResponse> checkOut(@PathVariable UUID id,
                                                  @Valid @RequestBody CheckOutRequest request) {
         return ResponseEntity.ok(stayService.checkOut(id, request));
+    }
+
+    @PostMapping("/{id}/move")
+    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<StayResponse> move(@PathVariable UUID id,
+                                             @Valid @RequestBody MoveRequest request) {
+        return ResponseEntity.ok(stayService.move(id, request));
     }
 
     @PostMapping
