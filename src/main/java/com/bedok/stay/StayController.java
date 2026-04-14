@@ -2,6 +2,7 @@ package com.bedok.stay;
 
 import com.bedok.common.model.PageResponse;
 import com.bedok.stay.dto.CheckInRequest;
+import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
 import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
@@ -73,6 +74,13 @@ public class StayController {
     public ResponseEntity<StayResponse> noShow(@PathVariable UUID id,
                                                @Valid @RequestBody NoShowRequest request) {
         return ResponseEntity.ok(stayService.noShow(id, request));
+    }
+
+    @PostMapping("/{id}/check-out")
+    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<StayResponse> checkOut(@PathVariable UUID id,
+                                                 @Valid @RequestBody CheckOutRequest request) {
+        return ResponseEntity.ok(stayService.checkOut(id, request));
     }
 
     @PostMapping

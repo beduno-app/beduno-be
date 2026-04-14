@@ -13,6 +13,7 @@ import com.bedok.stay.constraint.ConstraintContext;
 import com.bedok.stay.constraint.ConstraintEngine;
 import com.bedok.common.security.CurrentUser;
 import com.bedok.stay.dto.CheckInRequest;
+import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
 import com.bedok.stay.dto.NoShowRequest;
 import com.bedok.stay.dto.StayResponse;
@@ -142,6 +143,20 @@ public class StayService {
         }
         stay.setStatus(StayStatus.NO_SHOW);
         stay.setNotes(request.reasonTag());
+        stay = stayRepository.save(stay);
+        return stayMapper.toResponse(stay);
+    }
+
+    @Transactional
+    public StayResponse checkOut(UUID id, CheckOutRequest request) {
+        var stay = getStayOrThrow(id);
+        if (!stay.getStatus().canTransitionTo(StayStatus.CHECKED_OUT)) {
+            throw new ConflictException("error.stay.invalid_status_transition");
+        }
+        if (request.actualDateTo() != null) {
+            stay.setDateTo(request.actualDateTo());
+        }
+        stay.setStatus(StayStatus.CHECKED_OUT);
         stay = stayRepository.save(stay);
         return stayMapper.toResponse(stay);
     }
