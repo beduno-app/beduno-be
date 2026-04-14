@@ -56,7 +56,7 @@ public class PropertyService {
         propertyRepository.delete(property);
     }
 
-    Property getPropertyOrThrow(UUID id) {
+    public Property getPropertyOrThrow(UUID id) {
         var agencyId = TenantContext.requireAgencyId();
         return propertyRepository.findByIdAndAgencyId(id, agencyId)
                 .orElseThrow(() -> new NotFoundException("error.property.not_found"));
