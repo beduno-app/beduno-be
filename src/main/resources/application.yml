@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: bedok-be
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bedok
+    username: bedok
+    password: bedok
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
