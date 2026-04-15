@@ -7,6 +7,9 @@ import com.bedok.occupancy.dto.OccupancyExceptionResponse;
 import com.bedok.occupancy.dto.RoomOccupancyResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +30,7 @@ import java.util.UUID;
 public class OccupancyController {
 
     private final OccupancyService occupancyService;
+    private final ExportService exportService;
 
     @GetMapping("/occupancy")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
@@ -60,5 +64,44 @@ public class OccupancyController {
             @Valid @RequestBody InspectionReportRequest request) {
         return ResponseEntity.ok(occupancyService.submitInspectionReport(
                 propertyId, date != null ? date : LocalDate.now(), request));
+    }
+
+    @GetMapping("/occupancy/export")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
+    public ResponseEntity<byte[]> exportOccupancy(
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false, defaultValue = "EN") String language) {
+        var csv = exportService.exportOccupancy(propertyId, date != null ? date : LocalDate.now(), language);
+        return csvResponse(csv, "occupancy");
+    }
+
+    @GetMapping("/arrivals/export")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<byte[]> exportArrivals(
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false, defaultValue = "EN") String language) {
+        var csv = exportService.exportArrivals(propertyId, date != null ? date : LocalDate.now(), language);
+        return csvResponse(csv, "arrivals");
+    }
+
+    @GetMapping("/exceptions/export")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
+    public ResponseEntity<byte[]> exportExceptions(
+            @PathVariable UUID propertyId,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false, defaultValue = "EN") String language) {
+        var csv = exportService.exportExceptions(propertyId, date != null ? date : LocalDate.now(), language);
+        return csvResponse(csv, "exceptions");
+    }
+
+    private ResponseEntity<byte[]> csvResponse(String csv, String filePrefix) {
+        var bytes = csv.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/csv;charset=UTF-8"));
+        headers.setContentDisposition(ContentDisposition.attachment()
+                .filename(filePrefix + "_" + LocalDate.now() + ".csv").build());
+        return ResponseEntity.ok().headers(headers).body(bytes);
     }
 }
