@@ -10,18 +10,30 @@ import com.bedok.common.security.CurrentUser;
 import com.bedok.common.security.TenantContext;
 import com.bedok.worker.dto.CreateWorkerRequest;
 import com.bedok.worker.dto.UpdateWorkerRequest;
+import com.bedok.worker.dto.WorkerImportResult;
+import com.bedok.worker.dto.WorkerImportResult.WorkerImportError;
 import com.bedok.worker.dto.WorkerResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkerService {
@@ -91,6 +103,118 @@ public class WorkerService {
         workerRepository.save(worker);
         auditService.log(worker.getAgencyId(), currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.DELETED, previous, snapshot(worker), null);
+    }
+
+    @Transactional
+    public WorkerImportResult importCsv(MultipartFile file) {
+        var agencyId = TenantContext.requireAgencyId();
+        var actorId = currentUserId();
+        int created = 0;
+        int skipped = 0;
+        var errors = new ArrayList<WorkerImportError>();
+
+        try (var reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            var header = reader.readLine();
+            if (header == null) {
+                return new WorkerImportResult(0, 0, 0, List.of());
+            }
+
+            String line;
+            int row = 1;
+            while ((line = reader.readLine()) != null) {
+                row++;
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                try {
+                    var cols = parseCsvLine(line);
+                    if (cols.length < 4) {
+                        errors.add(new WorkerImportError(row, null, "error.worker.import.too_few_columns"));
+                        continue;
+                    }
+
+                    var internalId = col(cols, 0);
+                    var firstName  = col(cols, 1);
+                    var lastName   = col(cols, 2);
+                    var genderStr  = col(cols, 3);
+
+                    if (internalId.isBlank() || firstName.isBlank() || lastName.isBlank() || genderStr.isBlank()) {
+                        errors.add(new WorkerImportError(row, internalId.isBlank() ? null : internalId,
+                                "error.worker.import.required_field_missing"));
+                        continue;
+                    }
+
+                    Gender gender;
+                    try {
+                        gender = Gender.valueOf(genderStr.toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        errors.add(new WorkerImportError(row, internalId, "error.worker.import.invalid_gender"));
+                        continue;
+                    }
+
+                    if (workerRepository.existsByAgencyIdAndInternalId(agencyId, internalId)) {
+                        skipped++;
+                        continue;
+                    }
+
+                    var worker = new Worker();
+                    worker.setAgencyId(agencyId);
+                    worker.setInternalId(internalId);
+                    worker.setFirstName(firstName);
+                    worker.setLastName(lastName);
+                    worker.setGender(gender);
+                    worker.setNationality(col(cols, 4));
+                    worker.setPhone(col(cols, 5));
+                    worker.setEmail(col(cols, 6));
+                    var dobStr = col(cols, 7);
+                    if (!dobStr.isBlank()) {
+                        worker.setDateOfBirth(LocalDate.parse(dobStr));
+                    }
+                    var tagsStr = col(cols, 8);
+                    if (!tagsStr.isBlank()) {
+                        worker.setTags(Arrays.stream(tagsStr.split(";"))
+                                .map(String::trim).filter(t -> !t.isBlank()).toArray(String[]::new));
+                    }
+                    worker.setNotes(col(cols, 9));
+                    worker.setStatus(WorkerStatus.ACTIVE);
+                    worker = workerRepository.save(worker);
+                    auditService.log(agencyId, actorId, AuditEntityType.WORKER, worker.getId(),
+                            AuditAction.CREATED, null, snapshot(worker), "bulk_import");
+                    created++;
+                } catch (Exception e) {
+                    log.warn("Error importing worker at row {}: {}", row, e.getMessage());
+                    errors.add(new WorkerImportError(row, null, "error.worker.import.row_failed"));
+                }
+            }
+        } catch (Exception e) {
+            throw new com.bedok.common.exception.ValidationException("error.worker.import.file_unreadable");
+        }
+
+        return new WorkerImportResult(created, skipped, errors.size(), List.copyOf(errors));
+    }
+
+    private String[] parseCsvLine(String line) {
+        var result = new ArrayList<String>();
+        var sb = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                result.add(sb.toString().trim());
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        result.add(sb.toString().trim());
+        return result.toArray(String[]::new);
+    }
+
+    private String col(String[] cols, int index) {
+        return index < cols.length ? cols[index].strip() : "";
     }
 
     private UUID currentUserId() {

@@ -1,6 +1,10 @@
 package com.bedok.stay;
 
 import com.bedok.common.model.PageResponse;
+import com.bedok.stay.dto.BulkAssignRequest;
+import com.bedok.stay.dto.BulkAssignResult;
+import com.bedok.stay.dto.BulkCheckoutRequest;
+import com.bedok.stay.dto.BulkCheckoutResult;
 import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
@@ -109,5 +113,17 @@ public class StayController {
     public ResponseEntity<Void> cancel(@PathVariable UUID id) {
         stayService.cancel(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk-assign")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
+    public ResponseEntity<BulkAssignResult> bulkAssign(@Valid @RequestBody BulkAssignRequest request) {
+        return ResponseEntity.ok(stayService.bulkAssign(request));
+    }
+
+    @PostMapping("/bulk-checkout")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
+    public ResponseEntity<BulkCheckoutResult> bulkCheckout(@Valid @RequestBody BulkCheckoutRequest request) {
+        return ResponseEntity.ok(stayService.bulkCheckout(request));
     }
 }

@@ -15,6 +15,12 @@ import com.bedok.room.RoomRepository;
 import com.bedok.stay.constraint.ConstraintContext;
 import com.bedok.stay.constraint.ConstraintEngine;
 import com.bedok.common.security.CurrentUser;
+import com.bedok.stay.dto.BulkAssignRequest;
+import com.bedok.stay.dto.BulkAssignResult;
+import com.bedok.stay.dto.BulkAssignResult.AssignmentResult;
+import com.bedok.stay.dto.BulkCheckoutRequest;
+import com.bedok.stay.dto.BulkCheckoutResult;
+import com.bedok.stay.dto.BulkCheckoutResult.CheckoutResult;
 import com.bedok.stay.dto.CheckInRequest;
 import com.bedok.stay.dto.CheckOutRequest;
 import com.bedok.stay.dto.CreateStayRequest;
@@ -32,6 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -243,6 +250,77 @@ public class StayService {
         stayRepository.save(stay);
         auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CANCELLED, previous, snapshot(stay), null);
+    }
+
+    @Transactional
+    public BulkAssignResult bulkAssign(BulkAssignRequest request) {
+        var agencyId = TenantContext.requireAgencyId();
+        var actorId = currentUserId();
+        var results = new ArrayList<AssignmentResult>();
+        int created = 0;
+        int errors = 0;
+
+        for (int i = 0; i < request.assignments().size(); i++) {
+            var a = request.assignments().get(i);
+            try {
+                var worker = getWorkerOrThrow(a.workerId(), agencyId);
+                var room = getRoomOrThrow(a.roomId(), agencyId);
+                var property = getPropertyOrThrow(a.propertyId(), agencyId);
+                var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null);
+                runConstraints(ctx, a.overrideReason());
+
+                var stay = new Stay();
+                stay.setAgencyId(agencyId);
+                stay.setWorkerId(a.workerId());
+                stay.setPropertyId(a.propertyId());
+                stay.setRoomId(a.roomId());
+                stay.setDateFrom(a.dateFrom());
+                stay.setDateTo(a.dateTo());
+                stay.setOverrideReason(a.overrideReason());
+                stay.setStatus(StayStatus.PLANNED);
+                stay = stayRepository.save(stay);
+                auditService.log(agencyId, actorId, AuditEntityType.STAY, stay.getId(),
+                        AuditAction.BULK_ASSIGNED, null, snapshot(stay), null);
+                results.add(new AssignmentResult(i, a.workerId(), stay.getId(), "created", null));
+                created++;
+            } catch (Exception e) {
+                results.add(new AssignmentResult(i, a.workerId(), null, "error", e.getMessage()));
+                errors++;
+            }
+        }
+        return new BulkAssignResult(created, errors, List.copyOf(results));
+    }
+
+    @Transactional
+    public BulkCheckoutResult bulkCheckout(BulkCheckoutRequest request) {
+        var agencyId = TenantContext.requireAgencyId();
+        var actorId = currentUserId();
+        var results = new ArrayList<CheckoutResult>();
+        int checkedOut = 0;
+        int errors = 0;
+
+        for (var stayId : request.stayIds()) {
+            try {
+                var stay = stayRepository.findByIdAndAgencyId(stayId, agencyId)
+                        .orElseThrow(() -> new NotFoundException("error.stay.not_found"));
+                if (!stay.getStatus().canTransitionTo(StayStatus.CHECKED_OUT)) {
+                    results.add(new CheckoutResult(stayId, "error", "error.stay.invalid_status_transition"));
+                    errors++;
+                    continue;
+                }
+                var previous = snapshot(stay);
+                stay.setStatus(StayStatus.CHECKED_OUT);
+                stayRepository.save(stay);
+                auditService.log(agencyId, actorId, AuditEntityType.STAY, stayId,
+                        AuditAction.BULK_CHECKED_OUT, previous, snapshot(stay), null);
+                results.add(new CheckoutResult(stayId, "checked_out", null));
+                checkedOut++;
+            } catch (Exception e) {
+                results.add(new CheckoutResult(stayId, "error", e.getMessage()));
+                errors++;
+            }
+        }
+        return new BulkCheckoutResult(checkedOut, errors, List.copyOf(results));
     }
 
     private void runConstraints(ConstraintContext ctx, String overrideReason) {

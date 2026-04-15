@@ -3,6 +3,7 @@ package com.bedok.worker;
 import com.bedok.common.model.PageResponse;
 import com.bedok.worker.dto.CreateWorkerRequest;
 import com.bedok.worker.dto.UpdateWorkerRequest;
+import com.bedok.worker.dto.WorkerImportResult;
 import com.bedok.worker.dto.WorkerResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -66,5 +69,11 @@ public class WorkerController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         workerService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('AGENCY_ADMIN')")
+    public ResponseEntity<WorkerImportResult> importCsv(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(workerService.importCsv(file));
     }
 }
