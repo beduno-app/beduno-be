@@ -1,9 +1,13 @@
 package com.bedok.room;
 
+import com.bedok.audit.AuditAction;
+import com.bedok.audit.AuditEntityType;
+import com.bedok.audit.AuditService;
 import com.bedok.common.exception.ConflictException;
 import com.bedok.common.exception.NotFoundException;
 import com.bedok.common.exception.ValidationException;
 import com.bedok.common.model.PageResponse;
+import com.bedok.common.security.CurrentUser;
 import com.bedok.common.security.TenantContext;
 import com.bedok.property.PropertyService;
 import com.bedok.room.dto.CreateRoomRequest;
@@ -11,9 +15,12 @@ import com.bedok.room.dto.RoomResponse;
 import com.bedok.room.dto.UpdateRoomRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -23,6 +30,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final RoomMapper roomMapper;
     private final PropertyService propertyService;
+    private final AuditService auditService;
 
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
@@ -55,6 +63,8 @@ public class RoomService {
         room.setAgencyId(agencyId);
         room.setPropertyId(propertyId);
         room = roomRepository.save(room);
+        auditService.log(agencyId, currentUserId(), AuditEntityType.ROOM, room.getId(),
+                AuditAction.CREATED, null, snapshot(room), null);
         return roomMapper.toResponse(room);
     }
 
@@ -70,15 +80,39 @@ public class RoomService {
             throw new ConflictException("error.room.name_exists");
         }
 
+        var previous = snapshot(room);
         roomMapper.updateEntity(request, room);
         room = roomRepository.save(room);
+        auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
+                AuditAction.UPDATED, previous, snapshot(room), null);
         return roomMapper.toResponse(room);
     }
 
     @Transactional
     public void delete(UUID propertyId, UUID roomId) {
         var room = getRoomOrThrow(propertyId, roomId);
+        var previous = snapshot(room);
         roomRepository.delete(room);
+        auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
+                AuditAction.DELETED, previous, null, null);
+    }
+
+    private UUID currentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
+            return currentUser.userId();
+        }
+        return null;
+    }
+
+    private Map<String, Object> snapshot(Room room) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("name", room.getName());
+        map.put("status", room.getStatus().name());
+        map.put("capacity", room.getCapacity());
+        map.put("blockedSpots", room.getBlockedSpots());
+        map.put("genderRule", room.getGenderRule().name());
+        return map;
     }
 
     private Room getRoomOrThrow(UUID propertyId, UUID roomId) {

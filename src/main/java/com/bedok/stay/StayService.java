@@ -1,5 +1,8 @@
 package com.bedok.stay;
 
+import com.bedok.audit.AuditAction;
+import com.bedok.audit.AuditEntityType;
+import com.bedok.audit.AuditService;
 import com.bedok.common.exception.ConflictException;
 import com.bedok.common.exception.ConstraintViolationException;
 import com.bedok.common.exception.ConstraintViolationException.ViolationDetail;
@@ -29,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +47,7 @@ public class StayService {
     private final PropertyRepository propertyRepository;
     private final ConstraintEngine constraintEngine;
     private final StayMapper stayMapper;
+    private final AuditService auditService;
 
     @Transactional(readOnly = true)
     public PageResponse<StayResponse> findAll(
@@ -77,6 +82,8 @@ public class StayService {
         stay.setAgencyId(agencyId);
         stay.setStatus(StayStatus.PLANNED);
         stay = stayRepository.save(stay);
+        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.CREATED, null, snapshot(stay), null);
         return stayMapper.toResponse(stay);
     }
 
@@ -97,8 +104,11 @@ public class StayService {
                 request.dateFrom(), request.dateTo(), stay.getId());
         runConstraints(ctx, request.overrideReason());
 
+        var previous = snapshot(stay);
         stayMapper.updateEntity(request, stay);
         stay = stayRepository.save(stay);
+        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.UPDATED, previous, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
 
@@ -130,9 +140,12 @@ public class StayService {
         if (request.roomId() != null) {
             stay.setRoomId(request.roomId());
         }
+        var previous = snapshot(stay);
         stay.setStatus(StayStatus.CHECKED_IN);
         stay.setConfirmedByUserId(currentUserId());
         stay = stayRepository.save(stay);
+        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.CHECKED_IN, previous, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
 
@@ -142,9 +155,12 @@ public class StayService {
         if (!stay.getStatus().canTransitionTo(StayStatus.NO_SHOW)) {
             throw new ConflictException("error.stay.invalid_status_transition");
         }
+        var previous = snapshot(stay);
         stay.setStatus(StayStatus.NO_SHOW);
         stay.setNotes(request.reasonTag());
         stay = stayRepository.save(stay);
+        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.NO_SHOW, previous, snapshot(stay), request.reasonTag());
         return stayMapper.toResponse(stay);
     }
 
@@ -170,8 +186,11 @@ public class StayService {
                 today, originalDateTo, stay.getId());
         runConstraints(ctx, request.overrideReason());
 
+        var previousStay = snapshot(stay);
         stay.setStatus(StayStatus.CHECKED_OUT);
         stayRepository.save(stay);
+        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.CHECKED_OUT, previousStay, snapshot(stay), null);
 
         var newStay = new Stay();
         newStay.setAgencyId(agencyId);
@@ -183,6 +202,8 @@ public class StayService {
         newStay.setStatus(StayStatus.CHECKED_IN);
         newStay.setConfirmedByUserId(currentUserId());
         newStay = stayRepository.save(newStay);
+        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, newStay.getId(),
+                AuditAction.MOVED, null, snapshot(newStay), request.overrideReason());
         return stayMapper.toResponse(newStay);
     }
 
@@ -192,11 +213,14 @@ public class StayService {
         if (!stay.getStatus().canTransitionTo(StayStatus.CHECKED_OUT)) {
             throw new ConflictException("error.stay.invalid_status_transition");
         }
+        var previous = snapshot(stay);
         if (request.actualDateTo() != null) {
             stay.setDateTo(request.actualDateTo());
         }
         stay.setStatus(StayStatus.CHECKED_OUT);
         stay = stayRepository.save(stay);
+        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.CHECKED_OUT, previous, snapshot(stay), null);
         return stayMapper.toResponse(stay);
     }
 
@@ -214,8 +238,11 @@ public class StayService {
         if (!stay.getStatus().canTransitionTo(StayStatus.CANCELLED)) {
             throw new ConflictException("error.stay.invalid_status_transition");
         }
+        var previous = snapshot(stay);
         stay.setStatus(StayStatus.CANCELLED);
         stayRepository.save(stay);
+        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+                AuditAction.CANCELLED, previous, snapshot(stay), null);
     }
 
     private void runConstraints(ConstraintContext ctx, String overrideReason) {
@@ -248,7 +275,10 @@ public class StayService {
 
     private UUID currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        return ((CurrentUser) auth.getPrincipal()).userId();
+        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
+            return currentUser.userId();
+        }
+        return null;
     }
 
     private Stay getStayOrThrow(UUID id) {
@@ -270,5 +300,18 @@ public class StayService {
     private com.bedok.property.Property getPropertyOrThrow(UUID propertyId, UUID agencyId) {
         return propertyRepository.findByIdAndAgencyId(propertyId, agencyId)
                 .orElseThrow(() -> new NotFoundException("error.property.not_found"));
+    }
+
+    private Map<String, Object> snapshot(Stay stay) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("status", stay.getStatus().name());
+        map.put("workerId", stay.getWorkerId().toString());
+        map.put("roomId", stay.getRoomId().toString());
+        map.put("propertyId", stay.getPropertyId().toString());
+        map.put("dateFrom", stay.getDateFrom().toString());
+        if (stay.getDateTo() != null) {
+            map.put("dateTo", stay.getDateTo().toString());
+        }
+        return map;
     }
 }
