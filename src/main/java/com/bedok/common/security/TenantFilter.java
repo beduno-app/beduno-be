@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,6 +28,8 @@ public class TenantFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        var requestId = UUID.randomUUID().toString();
+        MDC.put("requestId", requestId);
         try {
             var token = extractToken(request);
             if (token != null && jwtTokenProvider.validateToken(token)) {
@@ -50,6 +53,8 @@ public class TenantFilter extends OncePerRequestFilter {
 
                 var currentUser = new CurrentUser(userId, agencyId, role, propertyIds, lang);
                 TenantContext.setAgencyId(agencyId);
+                MDC.put("agencyId", agencyId.toString());
+                MDC.put("userId", userId.toString());
 
                 var auth = new UsernamePasswordAuthenticationToken(
                         currentUser, null,
@@ -60,6 +65,7 @@ public class TenantFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             TenantContext.clear();
+            MDC.clear();
         }
     }
 

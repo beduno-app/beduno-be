@@ -1,6 +1,9 @@
 package com.bedok.stay;
 
 import com.bedok.common.model.PageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.bedok.stay.dto.BulkAssignRequest;
 import com.bedok.stay.dto.BulkAssignResult;
 import com.bedok.stay.dto.BulkCheckoutRequest;
@@ -34,6 +37,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Stays", description = "Stay lifecycle: plan, check-in, check-out, move, bulk operations")
 @RestController
 @RequestMapping("/api/v1/stays")
 @RequiredArgsConstructor
@@ -41,6 +45,7 @@ public class StayController {
 
     private final StayService stayService;
 
+    @Operation(summary = "List stays", description = "Paginated list filterable by worker, property, status, and date range")
     @GetMapping
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<PageResponse<StayResponse>> findAll(
@@ -53,12 +58,14 @@ public class StayController {
         return ResponseEntity.ok(stayService.findAll(workerId, propertyId, status, dateFrom, dateTo, pageable));
     }
 
+    @Operation(summary = "Get stay by ID")
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(stayService.findById(id));
     }
 
+    @Operation(summary = "Arrivals list", description = "Returns expected_today stays for a property on a given date")
     @GetMapping("/arrivals")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<List<StayResponse>> getArrivals(
@@ -67,6 +74,8 @@ public class StayController {
         return ResponseEntity.ok(stayService.getArrivals(propertyId, date != null ? date : LocalDate.now()));
     }
 
+    @Operation(summary = "Check in", description = "Transitions an expected_today stay to checked_in. Runs constraint engine. Optionally overrides room.")
+    @ApiResponse(responseCode = "422", description = "Constraint violation — re-submit with overrideReason to force")
     @PostMapping("/{id}/check-in")
     @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> checkIn(@PathVariable UUID id,
@@ -74,6 +83,7 @@ public class StayController {
         return ResponseEntity.ok(stayService.checkIn(id, request));
     }
 
+    @Operation(summary = "No-show", description = "Mark a stay as no_show with a reason tag")
     @PostMapping("/{id}/no-show")
     @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> noShow(@PathVariable UUID id,
@@ -81,6 +91,7 @@ public class StayController {
         return ResponseEntity.ok(stayService.noShow(id, request));
     }
 
+    @Operation(summary = "Check out", description = "Transitions a checked_in stay to checked_out. Sets actual departure date if different from planned.")
     @PostMapping("/{id}/check-out")
     @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> checkOut(@PathVariable UUID id,
@@ -88,6 +99,8 @@ public class StayController {
         return ResponseEntity.ok(stayService.checkOut(id, request));
     }
 
+    @Operation(summary = "Move worker to another room", description = "Atomic operation: checks out from current room, creates new stay in target room")
+    @ApiResponse(responseCode = "422", description = "Constraint violation on target room")
     @PostMapping("/{id}/move")
     @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> move(@PathVariable UUID id,
@@ -95,12 +108,17 @@ public class StayController {
         return ResponseEntity.ok(stayService.move(id, request));
     }
 
+    @Operation(summary = "Plan a stay", description = "Creates a planned stay. Runs constraint engine — returns 422 with violations if hard constraints are breached.")
+    @ApiResponse(responseCode = "201", description = "Stay planned")
+    @ApiResponse(responseCode = "422", description = "Constraint violation")
     @PostMapping
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<StayResponse> create(@Valid @RequestBody CreateStayRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(stayService.create(request));
     }
 
+    @Operation(summary = "Update stay", description = "Change dates or room. Runs constraint engine.")
+    @ApiResponse(responseCode = "422", description = "Constraint violation")
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<StayResponse> update(@PathVariable UUID id,
@@ -108,6 +126,8 @@ public class StayController {
         return ResponseEntity.ok(stayService.update(id, request));
     }
 
+    @Operation(summary = "Cancel stay")
+    @ApiResponse(responseCode = "204", description = "Stay cancelled")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<Void> cancel(@PathVariable UUID id) {
@@ -115,12 +135,14 @@ public class StayController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Bulk assign stays", description = "Creates multiple planned stays in one call. Returns per-item results including constraint violations.")
     @PostMapping("/bulk-assign")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<BulkAssignResult> bulkAssign(@Valid @RequestBody BulkAssignRequest request) {
         return ResponseEntity.ok(stayService.bulkAssign(request));
     }
 
+    @Operation(summary = "Bulk checkout stays", description = "Checks out multiple checked_in stays in one call. Returns per-item results.")
     @PostMapping("/bulk-checkout")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<BulkCheckoutResult> bulkCheckout(@Valid @RequestBody BulkCheckoutRequest request) {

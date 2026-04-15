@@ -5,6 +5,9 @@ import com.bedok.common.security.CurrentUser;
 import com.bedok.property.dto.CreatePropertyRequest;
 import com.bedok.property.dto.PropertyResponse;
 import com.bedok.property.dto.UpdatePropertyRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+@Tag(name = "Properties", description = "Property management")
 @RestController
 @RequestMapping("/api/v1/properties")
 @RequiredArgsConstructor
@@ -33,6 +37,7 @@ public class PropertyController {
 
     private final PropertyService propertyService;
 
+    @Operation(summary = "List properties", description = "Paginated list with optional status and name filters")
     @GetMapping
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<PageResponse<PropertyResponse>> findAll(
@@ -42,18 +47,22 @@ public class PropertyController {
         return ResponseEntity.ok(propertyService.findAll(status, search, pageable));
     }
 
+    @Operation(summary = "Get property by ID")
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<PropertyResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(propertyService.findById(id));
     }
 
+    @Operation(summary = "Create property")
+    @ApiResponse(responseCode = "201", description = "Property created")
     @PostMapping
     @PreAuthorize("hasRole('AGENCY_ADMIN')")
     public ResponseEntity<PropertyResponse> create(@Valid @RequestBody CreatePropertyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(propertyService.create(request));
     }
 
+    @Operation(summary = "Update property")
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN')")
     public ResponseEntity<PropertyResponse> update(@PathVariable UUID id,
@@ -67,6 +76,8 @@ public class PropertyController {
         return ResponseEntity.ok(propertyService.update(id, request));
     }
 
+    @Operation(summary = "Delete property", description = "Soft-deletes the property")
+    @ApiResponse(responseCode = "204", description = "Property deleted")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('AGENCY_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {

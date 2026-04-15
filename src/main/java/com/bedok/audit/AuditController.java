@@ -2,6 +2,8 @@ package com.bedok.audit;
 
 import com.bedok.audit.dto.AuditEventResponse;
 import com.bedok.common.model.PageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.util.UUID;
 
+@Tag(name = "Audit", description = "Immutable audit trail of all changes")
 @RestController
 @RequestMapping("/api/v1/audit")
 @RequiredArgsConstructor
@@ -24,6 +27,8 @@ public class AuditController {
 
     private final AuditService auditService;
 
+    @Operation(summary = "Query audit events",
+            description = "Paginated audit trail filterable by entity type, entity ID, actor user, and date range")
     @GetMapping
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER')")
     public ResponseEntity<PageResponse<AuditEventResponse>> findAll(
