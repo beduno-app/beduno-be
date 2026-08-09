@@ -1,218 +1,146 @@
-# Beduno Backend - Implementation Plan
+# Beduno Backend - Implementation Plan (delivered)
+
+> **Status: all six phases are implemented.** This document was written before the
+> build as a forward-looking plan. It has been restated to record what was actually
+> delivered. Tasks that were planned but not built are marked inline with **[not
+> delivered]** and collected in [Deferred / not delivered](#deferred--not-delivered).
+> Decisions the implementation made *differently* from this plan are the review
+> agenda in [`open-questions.md`](open-questions.md).
 
 ## Phases
 
-The implementation is split into 6 sequential phases. Each phase produces a working, testable increment.
+Six sequential phases, each producing a working, testable increment. All are
+complete; the codebase is 59+ commits, 124 Java files and 7 Flyway migrations.
 
 ---
 
-## Phase 1: Project Scaffold & Infrastructure
+## Phase 1: Project Scaffold & Infrastructure — delivered
 
 **Goal**: Bootable Spring Boot app with database, auth skeleton, and CI-ready test setup.
 
 ### Tasks
-1. Initialize Spring Boot 3.4 project with Gradle (Kotlin DSL)
-   - Dependencies: Spring Web, Spring Data JPA, Spring Security, Spring Validation, Flyway, PostgreSQL driver, Lombok, MapStruct, SpringDoc OpenAPI
-2. Configure `application.yml` with profiles (dev, prod)
-3. Set up Docker Compose with PostgreSQL 16
-4. Create `BaseEntity` (id UUID, createdAt, updatedAt)
-5. Create Flyway migration `V1__create_agencies.sql`
-   - `agencies` table with id, name, status, settings (JSONB), timestamps
-6. Create Flyway migration `V2__create_users.sql`
-   - `users` table with id, agency_id, email, password_hash, first_name, last_name, role, language, assigned_property_ids, status, timestamps
-7. Implement JWT authentication
-   - `JwtTokenProvider`: generate, validate, parse tokens
-   - `SecurityConfig`: stateless session, JWT filter, public endpoints (/auth/**)
-   - `AuthController`: POST /auth/login, POST /auth/refresh
-   - `AuthService`: authenticate, issue tokens
-8. Implement multi-tenancy
-   - `TenantContext` (ThreadLocal holding agencyId)
-   - `TenantFilter` (extracts agencyId from JWT, sets TenantContext)
-9. Set up `GlobalExceptionHandler` with standard error response format
-10. Set up Testcontainers base class for integration tests
-11. Write smoke test: app starts, login works, JWT is valid
+1. ✅ Spring Boot 3.4 project with Gradle (Kotlin DSL) — Spring Web, Data JPA, Security, Validation, Flyway, PostgreSQL driver, Lombok, MapStruct, SpringDoc OpenAPI
+2. ✅ `application.yml` with dev and prod profiles
+3. ✅ Docker Compose with PostgreSQL 16
+4. ✅ `BaseEntity` (id UUID, createdAt, updatedAt)
+5. ✅ `V1__create_agencies.sql`
+6. ✅ `V2__create_users.sql`
+7. ✅ JWT authentication — `JwtTokenProvider`, `SecurityConfig`, `AuthController` (login, refresh, me), `AuthService`
+8. ✅ Multi-tenancy — `TenantContext` (ThreadLocal), `TenantFilter` reading JWT claims
+9. ✅ `GlobalExceptionHandler` with a standard error response format
+10. ✅ Testcontainers base class (`IntegrationTestBase`, singleton container)
+11. ✅ Smoke test: app starts, JWT is valid
 
-### Deliverable
-App boots, connects to Postgres, user can log in and receive a JWT. Integration test suite runs against Testcontainers.
+**Delivered.** App boots, connects to Postgres, issues JWTs. Integration suite runs
+against Testcontainers.
 
 ---
 
-## Phase 2: Core Entities (Workers, Properties, Rooms)
+## Phase 2: Core Entities (Workers, Properties, Rooms) — delivered
 
 **Goal**: CRUD for the three core entities with tenant isolation and role-based access.
 
 ### Tasks
-1. Flyway migration `V3__create_workers.sql`
-   - workers table with all fields, unique constraint on (agency_id, internal_id), index on agency_id
-2. Worker module
-   - Entity, Repository, Service (CRUD + search/filter), Controller
-   - DTOs: CreateWorkerRequest, UpdateWorkerRequest, WorkerResponse, WorkerSummary
-   - Endpoints: GET/POST/PUT/DELETE /api/v1/workers, GET /api/v1/workers/{id}
-   - Filtering: by status, gender, tag, name search
-   - Soft delete
-3. Flyway migration `V4__create_properties_rooms.sql`
-   - properties table, rooms table (with FK to property), indexes
-4. Property module
-   - Entity, Repository, Service, Controller
-   - DTOs for create/update/response
-   - Endpoints: CRUD for properties
-5. Room module (nested under property)
-   - Entity, Repository, Service, Controller
-   - Endpoints: CRUD at /api/v1/properties/{propertyId}/rooms
-   - Capacity management, blocked spots, gender rule
-6. Role-based access on all endpoints
-   - Agency Admin: full CRUD
-   - Agency Planner: read workers, read properties/rooms
-   - Property Admin: read/write own properties and rooms
-   - Front Desk: read-only
-7. Tenant isolation verification
-   - All repository queries filter by agencyId
-   - Integration tests: cross-tenant data is never returned
-8. Pagination and sorting on list endpoints
-
-### Deliverable
-Full CRUD for workers, properties, rooms. Role-based access enforced. Tenant isolation tested.
+1. ✅ `V3__create_workers.sql` — unique on (agency_id, internal_id)
+2. ✅ Worker module — CRUD, filtering by status/gender/tag/name, soft delete via `deleted_at`
+3. ✅ `V4__create_properties_rooms.sql`
+4. ✅ Property module — CRUD
+5. ✅ Room module — **shipped as its own top-level module**, not nested inside `property/` as the plan's structure implied. Endpoints stayed nested at `/api/v1/properties/{propertyId}/rooms`
+6. ⚠️ Role-based access — enforced, but **not as specified**: Agency Planner is read-only on workers (the plan gave it write access), and Property Admin cannot delete rooms
+7. ⚠️ Tenant isolation — every query filters by `agencyId` except the deliberate cross-tenant scheduler sweep. Integration tests exist but two of them do not actually assert exclusion (see `open-questions.md` §5)
+8. ✅ Pagination and sorting on list endpoints — though sort keys are inconsistent between endpoints (see Q9)
 
 ---
 
-## Phase 3: Stay Management & Constraint Engine
+## Phase 3: Stay Management & Constraint Engine — delivered
 
 **Goal**: Create, update, and manage stays with full constraint validation.
 
 ### Tasks
-1. Flyway migration `V5__create_stays.sql`
-   - stays table with all fields, indexes on (agency_id, worker_id), (agency_id, property_id), (agency_id, status)
-   - Composite index for occupancy queries: (room_id, status, date_from, date_to)
-2. StayStatus enum with valid transition map
-3. Constraint engine
-   - `ConstraintEngine` orchestrator
-   - `CapacityConstraint`: check room occupancy vs capacity - blockedSpots
-   - `DoubleBookingConstraint`: check overlapping checked_in stays for same worker
-   - `BlockedRoomConstraint`: check room/property status
-   - `GenderConstraint`: check gender rule compliance (soft)
-   - `ConstraintResult` with hard/soft violations
-   - Unit tests for every constraint type and edge case
-4. Stay module
-   - Entity (with `@Version` for optimistic locking), Repository, Service, Controller
-   - Create stay (planned) - runs constraint engine
-   - Update stay (change dates, room) - runs constraint engine
-   - Cancel stay
-   - Status transitions with validation
-5. Stay endpoints
-   - POST /api/v1/stays (create planned stay)
-   - PUT /api/v1/stays/{id} (update)
-   - DELETE /api/v1/stays/{id} (cancel)
-   - GET /api/v1/stays?workerId=&propertyId=&status=&dateFrom=&dateTo=
-   - GET /api/v1/stays/{id}
-6. Soft constraint override flow
-   - If soft violations present, return 422 with violation details
-   - Client resends with `overrideReason` field -> operation proceeds
-7. Role-based access
-   - Agency Planner/Admin: create/update/cancel planned stays
-   - Property Admin: create/update for own properties
-   - Front Desk: read-only on stays (operational actions in Phase 4)
-
-### Deliverable
-Stays can be created and managed with full constraint validation. Constraint engine has comprehensive unit tests.
+1. ✅ `V5__create_stays.sql` with the planned indexes and a `chk_stays_dates` CHECK
+2. ✅ `StayStatus` enum with a valid-transition map — **six states, no `MOVED`**
+3. ⚠️ Constraint engine — `ConstraintEngine`, `CapacityConstraint`, `DoubleBookingConstraint`, `BlockedRoomConstraint` (which also covers property-inactive), `GenderConstraint` (soft), `ConstraintResult`, unit tests. **Capacity and double-booking count PLANNED and EXPECTED_TODAY as well as CHECKED_IN**, which the plan did not specify and which makes over-planning a hard block (see Q1)
+4. ✅ Stay module with `@Version` optimistic locking
+5. ✅ Stay endpoints — create, update, cancel, list with filters, get by id
+6. ✅ Soft-constraint override — 422 with details, resubmit with `overrideReason`
+7. ⚠️ Role-based access — as planned, except Front Desk can also call `bulk-checkout`, and the override itself is not role-restricted (see S2)
 
 ---
 
-## Phase 4: Operational Workflows (Arrivals, Check-in/out, Inspection)
+## Phase 4: Operational Workflows (Arrivals, Check-in/out, Inspection) — delivered
 
 **Goal**: The three must-not-fail workflows are fully functional.
 
 ### Tasks
-1. Automatic status transition: planned -> expected_today
-   - Scheduled task (`@Scheduled`) runs daily at configurable time
-   - Finds all stays with status=planned and dateFrom=today, transitions to expected_today
-2. Arrivals workflow
-   - GET /api/v1/stays/arrivals?propertyId=&date= (expected_today stays)
-   - POST /api/v1/stays/{id}/check-in (with optional room override)
-     - Runs constraint engine before confirming
-     - Sets confirmedByUserId
-     - Transitions status to checked_in
-   - POST /api/v1/stays/{id}/no-show (with reason tag)
-3. Check-out workflow
-   - POST /api/v1/stays/{id}/check-out
-   - Sets actual dateTo if different from planned
-4. Room move workflow
-   - POST /api/v1/stays/{id}/move (with target roomId)
-   - Checks out from current room, creates new stay in target room
-   - Atomic operation (single transaction)
-5. Occupancy service
-   - GET /api/v1/properties/{id}/occupancy?date= (rooms with current occupants)
-   - GET /api/v1/properties/{id}/exceptions?date= (over-capacity, unassigned)
-   - Aggregation query: room capacity vs checked_in count
-6. Inspection mode
-   - GET /api/v1/properties/{id}/inspection?date= (room-by-room roster)
-   - POST /api/v1/properties/{id}/inspection (submit discrepancy report)
-   - Discrepancy: expected worker not present, unexpected worker present
-7. Role enforcement
-   - Check-in/out/move/no-show: Property Admin + Front Desk only
-   - Inspection: Property Admin only
-8. Integration tests for complete workflows
-   - Create property -> rooms -> workers -> plan stays -> arrival day -> check-in -> nightly occupancy -> inspection
-
-### Deliverable
-All three must-not-fail workflows operational. End-to-end integration test covers the full lifecycle.
+1. ✅ Scheduled `planned -> expected_today` transition — `StayScheduler`, cron `beduno.scheduler.arrival-transition-cron` (default 06:00). Intentionally cross-tenant
+2. ✅ Arrivals workflow — `GET /stays/arrivals` (propertyId **required**), check-in with optional room override, no-show with reason tag
+3. ✅ Check-out workflow — sets `dateTo` only when `actualDateTo` is supplied
+4. ⚠️ Room move — atomic, single transaction, but modelled as check-out plus a new stay rather than a `MOVED` status, and **same-property only** (the plan allowed a different property). Refuses with 409 on the stay's final day
+5. ✅ Occupancy service — occupancy and exceptions endpoints with the aggregation query
+6. ⚠️ Inspection mode — roster and discrepancy computation both work, but **the submit endpoint persists nothing** and writes no audit event (see Q5)
+7. ✅ Role enforcement on check-in/out/move/no-show (Property Admin + Front Desk) and inspection (Property Admin)
+8. ✅ End-to-end integration test covering the full lifecycle
 
 ---
 
-## Phase 5: Audit Trail, Bulk Operations & Export
+## Phase 5: Audit Trail, Bulk Operations & Export — delivered
 
 **Goal**: Full auditability, bulk workflows, and exportable reports.
 
 ### Tasks
-1. Flyway migration `V6__create_audit_events.sql`
-2. Audit module
-   - `AuditService.log(entityType, entityId, action, previousState, newState, reason)`
-   - Integrate into Stay, Worker, Room, Property services
-   - Store before/after state as JSONB
-3. Audit endpoints
-   - GET /api/v1/audit?entityType=&entityId=&userId=&dateFrom=&dateTo=
-   - Pagination, filtering by entity, actor, date range, action type
-4. Bulk operations
-   - POST /api/v1/workers/import (CSV upload)
-     - Parse CSV, validate rows, create workers, return summary (created/skipped/errors)
-   - POST /api/v1/stays/bulk-assign (list of worker+room+dates)
-     - Run constraint engine per assignment, return per-item results
-   - POST /api/v1/stays/bulk-checkout (list of stay IDs)
-5. Export service
-   - GET /api/v1/properties/{id}/occupancy/export?format=csv&language=pl
-   - Nightly occupancy list with localized headers and status labels
-   - Arrivals list export
-   - Exception report export
-6. i18n for exports
-   - Message bundles for status labels, column headers, reason tags
-   - Language parameter on all export endpoints
-7. Integration tests for bulk operations (happy path + partial failures)
-
-### Deliverable
-Full audit trail on all changes. Bulk import/assign/checkout working. CSV exports with language support.
+1. ✅ `V6__create_audit_events.sql`
+2. ✅ Audit module — `AuditService.log(...)` with before/after JSONB snapshots, integrated into Stay, Worker, Room and Property services at ~20 call sites. **Explicit calls, not AOP**
+3. ⚠️ Audit endpoint — filters by entityType, entityId, actorUserId and date range. **No `action` filter**, though the plan called for one
+4. ✅ Bulk operations — CSV worker import, bulk-assign, bulk-checkout, all returning per-item results. Bulk-assign flattens constraint details to a bare message code (see Q8)
+5. ✅ Export service — occupancy, arrivals and exceptions as CSV with a `language` parameter
+6. ✅ i18n for exports — all five languages plus the default bundle are complete and key-identical. (This was only true for EN and PL until the reconciliation pass; DE/RU/UA exports previously emitted raw message keys.)
+7. ✅ Integration tests for bulk operations, happy path and partial failures
 
 ---
 
-## Phase 6: Polish, Security Hardening & Documentation
+## Phase 6: Polish, Security Hardening & Documentation — delivered
 
 **Goal**: Production-ready hardening, API documentation, and operational readiness.
 
 ### Tasks
-1. Rate limiting on auth endpoints
-2. Input sanitization review (XSS, injection)
-3. CORS configuration for frontend origin
-4. Spring Actuator: health, info, metrics endpoints (secured)
-5. Structured logging with MDC (agencyId, userId, traceId)
-6. OpenAPI documentation
-   - All endpoints documented with request/response schemas
-   - Example values for common operations
-   - Error response documentation
-7. Dockerfile for production build (multi-stage)
-8. Database indexes review and optimization
-9. Load test the critical queries (occupancy, arrivals) with realistic data volumes
-10. README with setup instructions, environment variables, API overview
+1. ✅ Rate limiting on auth endpoints — Bucket4j, 10 req/min per IP. Bucket map is never evicted (see S4)
+2. ⚠️ Input sanitization review — no artifact was produced; nothing to verify against
+3. ✅ CORS configured — but wide open with credentials allowed (see S3)
+4. ⚠️ Spring Actuator — `health` and `info` exposed; **`metrics` was planned and is not exposed**
+5. ✅ Structured logging with MDC (requestId, userId, agencyId) and JSON output under the prod profile
+6. ✅ OpenAPI documentation — bearer scheme, `@Operation` on all controllers
+7. ✅ Multi-stage production Dockerfile, non-root, with a healthcheck
+8. ⚠️ Database index review — indexes exist and match the plan, but no review record was produced
+9. ❌ **[not delivered]** Load test the critical queries — no harness, no results
+10. ✅ README with setup, environment variables and API overview
 
-### Deliverable
-Production-ready backend with complete API docs, containerized build, and security hardening.
+### Unplanned additions
+
+- **Checkstyle** (`config/checkstyle/checkstyle.xml`, `isIgnoreFailures = false`) — wired into `./gradlew build`. Never mentioned in this plan.
+- **`V7__add_stay_no_show_reason.sql`** — added during reconciliation so the no-show reason stops overwriting `stays.notes`.
+- **401 handling** — `UnauthorizedException`, `RestAuthenticationEntryPoint`, `RestAccessDeniedHandler`.
+- **Deletion guards** — 409 on property/room delete while referenced.
+
+---
+
+## Deferred / not delivered
+
+Carried forward. Details and the reasoning behind each sit in
+[`open-questions.md`](open-questions.md).
+
+| Item | Planned in | Status |
+|---|---|---|
+| UUID v7 (time-ordered ids) | Key decisions | Not implemented — `GenerationType.UUID` and `gen_random_uuid()` are both random v4 |
+| Soft delete across entities | Key decisions | Workers only. Stays are cancelled by status; properties and rooms are hard-deleted behind a 409 guard |
+| Load test critical queries | Phase 6.9 | Not done |
+| Actuator `metrics` endpoint | Phase 6.4 | Not exposed |
+| Audit `action` filter | Phase 5.3 | Not supported |
+| Input sanitization review | Phase 6.2 | No artifact |
+| DB index review record | Phase 6.8 | No artifact |
+| Per-property scoping for operational roles | Phase 4.7 | Enforced for property/room writes only — see S1 |
+| Role-restricted soft-constraint override | Phase 3.7 | Not enforced — see S2 |
+| Persisted inspection reports | Phase 4.6 | Computed and returned, never stored — see Q5 |
+| User and agency management API | Implied throughout | No controller exists — see Q6 |
 
 ---
 
@@ -237,16 +165,19 @@ Phase 5 (Audit + Bulk + Export)
 Phase 6 (Polish)
 ```
 
-Each phase depends on the previous one. Within each phase, tasks can be parallelized where noted.
-
 ## Key Implementation Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Build tool | Gradle (Kotlin DSL) | Faster than Maven, type-safe build scripts |
-| IDs | UUID v7 (time-ordered) | No sequence contention, safe for distributed systems, sortable |
-| Timestamps | UTC everywhere, LocalDate for stay dates | Avoid timezone confusion; stay dates are calendar dates, not instants |
-| Soft delete | `deleted_at` column | Required for audit trail and data retention |
-| Optimistic locking | `@Version` on Stay | Prevent concurrent check-in race conditions |
-| Multi-tenancy | Shared schema + agency_id filter | Simplest for MVP, sufficient for expected scale |
-| Constraint override | Re-submit with overrideReason | Clean UX flow, audit-friendly |
+Corrected to record what was actually built. Rows where the plan and the code
+disagree are called out.
+
+| Decision | Planned | As built |
+|----------|---------|----------|
+| Build tool | Gradle (Kotlin DSL) | ✅ As planned |
+| IDs | UUID v7 (time-ordered), for sortability and index locality | ❌ **Random UUID v4** — `GenerationType.UUID` + `gen_random_uuid()`. The stated benefit was never realised |
+| Timestamps | UTC everywhere, `LocalDate` for stay dates | ✅ As planned — `TIMESTAMPTZ` + `LocalDate` |
+| Soft delete | `deleted_at` column | ⚠️ **Workers only.** Stays use a `CANCELLED` status; properties and rooms are hard-deleted, guarded by a 409 conflict check |
+| Optimistic locking | `@Version` on Stay | ✅ As planned |
+| Multi-tenancy | Shared schema + `agency_id` filter | ✅ As planned, with one sanctioned cross-tenant query (the scheduler sweep) |
+| Constraint override | Re-submit with `overrideReason` | ✅ As planned, but ⚠️ not restricted by role |
+| Static analysis | *(not planned)* | ➕ Checkstyle, failing the build on violations |
+| Authentication errors | *(not specified)* | ➕ 401 with the standard error envelope; 403 reserved for role denials |
