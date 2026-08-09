@@ -1,14 +1,33 @@
-# Idea #17 - Bedok
+# Idea #17 - Beduno (originally Bedok)
 
 **Created:** Apr 13 at 9:00 PM
 **Updated:** Apr 14 at 1:31 PM
+**Renamed:** 2026-08-09 — Bedok → **Beduno**
 **Messages:** 16
+
+---
+
+## Naming
+
+The product is **Beduno**. It ships as GitHub org `beduno-app`, repository `beduno-be`, and Java package `com.beduno`.
+
+It was called **Bedok** throughout the conversation below, and the transcript is kept verbatim as a record of how the idea was scoped. Three reasons drove the rename:
+
+1. **`bedok` was unavailable** — the name and domain the transcript calls "reserved, final" turned out to be taken.
+2. **Bedok is a district of Singapore** (~280k residents), which meant a permanent fight for organic search and paid keywords.
+3. **"Bed" hard-codes the MVP's narrowest noun.** The roadmap moves through job-site linkage (Phase 2), transport (Phase 3), partner supply (Phase 4), and marketplace (Phase 5). Beduno names the product without binding it to a single entity in the data model.
+
+Beduno also reads identically in all five launch languages (PL, EN, DE, UA, RU) — every letter in it is pronounced the same way across them, which `Bedok` and most alternatives were not.
+
+**Known trade-off (Med):** in Russian and Ukrainian the leading `бед-` / `бід-` is the stem of *бедный* / *біда* ("poor", "hardship"). Worth watching in worker-facing UI copy and in UA/RU market testing, given the reputation sensitivity flagged under *Pushback* below.
 
 ---
 
 ## User - Apr 13 at 9:03 PM
 
 #idea 17: bedok (name and domain reserved, final)
+
+> **Note:** superseded — the product is now **Beduno**. See *Naming* above.
 
 the problem statement is: owners of temporary work agencies need to move a lot of people at once between far locations, people might have different skillsets, companies have different needs, but those workers always have to sleep somewhere, some of the agency owners own also worker hotels but still need to keep track of who is living where
 

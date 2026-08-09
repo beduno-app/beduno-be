@@ -1,4 +1,4 @@
-# Bedok Backend - API Specification
+# Beduno Backend - API Specification
 
 > **For the frontend team.** All endpoints are REST/JSON. Base URL: `/api/v1`. OpenAPI spec will be auto-generated at `/swagger-ui.html` and `/v3/api-docs` — use it to generate TypeScript API clients.
 

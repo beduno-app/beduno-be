@@ -1,4 +1,4 @@
-# Bedok Backend - Architecture
+# Beduno Backend - Architecture
 
 ## Technology Stack
 
@@ -20,7 +20,7 @@
 ## Project Structure
 
 ```
-bedok-be/
+beduno-be/
 ├── build.gradle.kts
 ├── settings.gradle.kts
 ├── gradle/
@@ -31,8 +31,8 @@ bedok-be/
 ├── docs/
 ├── src/
 │   ├── main/
-│   │   ├── java/com/bedok/
-│   │   │   ├── BedokApplication.java
+│   │   ├── java/com/beduno/
+│   │   │   ├── BedunoApplication.java
 │   │   │   ├── config/
 │   │   │   │   ├── SecurityConfig.java
 │   │   │   │   ├── JwtConfig.java
@@ -131,7 +131,7 @@ bedok-be/
 │   │           ├── messages_ua.properties
 │   │           └── messages_ru.properties
 │   └── test/
-│       └── java/com/bedok/
+│       └── java/com/beduno/
 │           ├── stay/
 │           │   ├── StayServiceTest.java
 │           │   ├── StayControllerTest.java

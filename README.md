@@ -1,4 +1,4 @@
-# Bedok Backend
+# Beduno Backend
 
 Worker housing management system for temporary work agencies.
 
@@ -32,10 +32,10 @@ docker compose -f docker/docker-compose.yml up -d
 
 | Variable | Default (dev) | Description |
 |----------|---------------|-------------|
-| `JWT_SECRET` | `bedok-dev-secret-key-...` | HS256 signing key (min 256 bits) |
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/bedok` | JDBC URL |
-| `SPRING_DATASOURCE_USERNAME` | `bedok` | DB username |
-| `SPRING_DATASOURCE_PASSWORD` | `bedok` | DB password |
+| `JWT_SECRET` | `beduno-dev-secret-key-...` | HS256 signing key (min 256 bits) |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/beduno` | JDBC URL |
+| `SPRING_DATASOURCE_USERNAME` | `beduno` | DB username |
+| `SPRING_DATASOURCE_PASSWORD` | `beduno` | DB password |
 | `SPRING_PROFILES_ACTIVE` | — | Set to `prod` for JSON structured logs |
 
 ---
@@ -54,15 +54,15 @@ docker compose -f docker/docker-compose.yml up -d
 
 ```bash
 # Build production image
-docker build -f docker/Dockerfile -t bedok-be:latest .
+docker build -f docker/Dockerfile -t beduno-be:latest .
 
 # Run
 docker run -p 8080:8080 \
   -e JWT_SECRET=<your-secret> \
-  -e SPRING_DATASOURCE_URL=jdbc:postgresql://<host>:5432/bedok \
-  -e SPRING_DATASOURCE_USERNAME=bedok \
+  -e SPRING_DATASOURCE_URL=jdbc:postgresql://<host>:5432/beduno \
+  -e SPRING_DATASOURCE_USERNAME=beduno \
   -e SPRING_DATASOURCE_PASSWORD=<password> \
-  bedok-be:latest
+  beduno-be:latest
 ```
 
 ---

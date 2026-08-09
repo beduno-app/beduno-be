@@ -1,4 +1,4 @@
-# Bedok Backend - Coding Guidelines
+# Beduno Backend - Coding Guidelines
 
 ## Java Conventions
 
@@ -12,7 +12,7 @@
 - Classes: `PascalCase`
 - Methods/variables: `camelCase`
 - Constants: `UPPER_SNAKE_CASE`
-- Packages: `com.bedok.<module>`
+- Packages: `com.beduno.<module>`
 - Database columns: `snake_case`
 - API paths: `kebab-case` (e.g., `/api/v1/bulk-assign`)
 

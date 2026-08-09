@@ -1,8 +1,8 @@
-# Bedok Backend - Project Overview
+# Beduno Backend - Project Overview
 
-## What is Bedok?
+## What is Beduno?
 
-Bedok is an operational system for temporary work agencies to manage worker housing. It replaces spreadsheets and WhatsApp with a reliable, auditable source of truth for **"who sleeps where tonight"**.
+Beduno is an operational system for temporary work agencies to manage worker housing. It replaces spreadsheets and WhatsApp with a reliable, auditable source of truth for **"who sleeps where tonight"**.
 
 ## Problem Statement
 
@@ -10,7 +10,7 @@ Owners of temporary work agencies relocate large groups of workers between dista
 
 ## MVP Scope (Phase 1 - Housing Source of Truth)
 
-The MVP proves Bedok can be the reliable system of record for bed occupancy across multiple properties for one agency.
+The MVP proves Beduno can be the reliable system of record for bed occupancy across multiple properties for one agency.
 
 ### Three Must-Not-Fail Moments
 

@@ -1,4 +1,4 @@
-# Bedok Backend - Requirements Analysis
+# Beduno Backend - Requirements Analysis
 
 ## Domain Model
 

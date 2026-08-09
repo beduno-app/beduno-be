@@ -1,4 +1,4 @@
-# Bedok Backend - Testing Guidelines
+# Beduno Backend - Testing Guidelines
 
 ## Testing Philosophy
 
@@ -193,7 +193,7 @@ void shouldNotReturnWorkersFromOtherAgency() {
 ./gradlew test --tests '*IntegrationTest'
 
 # Specific test class
-./gradlew test --tests 'com.bedok.stay.constraint.ConstraintEngineTest'
+./gradlew test --tests 'com.beduno.stay.constraint.ConstraintEngineTest'
 ```
 
 ## CI Expectations

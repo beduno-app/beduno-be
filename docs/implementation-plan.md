@@ -1,4 +1,4 @@
-# Bedok Backend - Implementation Plan
+# Beduno Backend - Implementation Plan
 
 ## Phases
 

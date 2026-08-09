@@ -1,8 +1,8 @@
-# Bedok Backend - Claude Code Guidelines
+# Beduno Backend - Claude Code Guidelines
 
 ## Project
 
-Bedok is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.4 + PostgreSQL 16.
+Beduno is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.4 + PostgreSQL 16.
 
 ## Build & Test
 
@@ -23,7 +23,7 @@ docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 ## Key Conventions
 
 - **Java 21 features**: records for DTOs, `var` for local variables, sealed interfaces where appropriate
-- **Package naming**: `com.bedok.<module>`
+- **Package naming**: `com.beduno.<module>`
 - **DTOs**: Java records, separate request/response, MapStruct for mapping
 - **Entities**: extend `BaseEntity` (UUID id, createdAt, updatedAt), include `agencyId` for tenant isolation
 - **Exceptions**: extend `BusinessException`, use message codes (never hardcoded strings)
