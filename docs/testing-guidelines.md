@@ -39,39 +39,51 @@ There is no separate E2E tier in this codebase - just two layers in practice. Fu
 - One assertion per test (logical assertion - multiple `assertThat` calls on the same result are fine)
 - Use `@Nested` classes to group related scenarios
 
+This is the real shape, taken from `ConstraintEngineTest`. The engine takes a
+single `ConstraintContext` (there is no `Action` argument — every constraint runs
+on every evaluation), and violation `type` is a `String`, not an enum:
+
 ```java
+@ExtendWith(MockitoExtension.class)
 class ConstraintEngineTest {
 
+    @Mock
+    private StayRepository stayRepository;
+
+    private ConstraintEngine engine;
+
+    @BeforeEach
+    void setUp() {
+        engine = new ConstraintEngine(List.of(
+                new BlockedRoomConstraint(),
+                new CapacityConstraint(stayRepository),
+                new DoubleBookingConstraint(stayRepository),
+                new GenderConstraint()));
+    }
+
     @Nested
-    class CapacityConstraint {
+    class BlockedRoom {
 
         @Test
-        void shouldRejectCheckIn_whenRoomAtFullCapacity() {
+        void shouldBlockOperation_whenRoomIsBlocked() {
             // given
-            var room = aRoom().withCapacity(4).withCurrentOccupancy(4).build();
-            var stay = aStay().inRoom(room).build();
+            var room = TestBuilders.aRoom().status(RoomStatus.BLOCKED).build();
+            var worker = TestBuilders.aWorker().build();
+            var property = TestBuilders.aProperty().build();
+            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList()))
+                    .thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList()))
+                    .thenReturn(0L);
 
             // when
-            var result = engine.evaluate(Action.CHECK_IN, stay);
+            var result = engine.evaluate(new ConstraintContext(
+                    worker, room, property, LocalDate.now(), LocalDate.now().plusDays(7), null));
 
             // then
             assertThat(result.isAllowed()).isFalse();
-            assertThat(result.hardViolations()).hasSize(1);
-            assertThat(result.hardViolations().getFirst().type())
-                .isEqualTo(ViolationType.CAPACITY_EXCEEDED);
-        }
-
-        @Test
-        void shouldAllowCheckIn_whenRoomHasAvailableSpots() {
-            // given
-            var room = aRoom().withCapacity(4).withCurrentOccupancy(3).build();
-            var stay = aStay().inRoom(room).build();
-
-            // when
-            var result = engine.evaluate(Action.CHECK_IN, stay);
-
-            // then
-            assertThat(result.isAllowed()).isTrue();
+            assertThat(result.hardViolations())
+                    .extracting(HardViolation::type)
+                    .contains("ROOM_BLOCKED");
         }
     }
 }

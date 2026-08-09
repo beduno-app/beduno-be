@@ -15,7 +15,7 @@ docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 
 ## Project Structure
 
-- Organized by domain module (`auth/`, `user/`, `agency/`, `worker/`, `property/`, `stay/`, `occupancy/`, `audit/`)
+- Organized by domain module (`auth/`, `user/`, `agency/`, `worker/`, `property/`, `room/`, `stay/`, `occupancy/`, `audit/`)
 - Shared code in `common/` (exceptions, security, model)
 - Configuration in `config/`
 - Each module: Controller, Service, Repository, Entity, DTOs
@@ -34,11 +34,11 @@ docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 
 ## Multi-Tenancy
 
-Shared schema with `agency_id` discriminator. `TenantContext` (ThreadLocal) set by `TenantFilter` from JWT claims. Every repository query MUST filter by agencyId.
+Shared schema with `agency_id` discriminator. `TenantContext` (ThreadLocal) set by `TenantFilter` from JWT claims. Every repository query MUST filter by agencyId, with two sanctioned exceptions: `StayRepository.findPlannedArrivingOn` (deliberately cross-tenant — it backs the nightly scheduler sweep that transitions PLANNED stays to EXPECTED_TODAY across all agencies) and `OccupancyService.loadWorkers` (uses `findAllById`, safe today only because the ids it's given already came from an agency-filtered stay query — don't reuse that pattern with an unfiltered id list). Any new cross-tenant query needs the same explicit justification.
 
 ## Auth
 
-JWT-based stateless auth. Tokens carry: userId, agencyId, role, assignedPropertyIds, lang. Roles: AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK.
+JWT-based stateless auth. Access tokens carry: userId (subject), agencyId, role, assignedPropertyIds ("properties" claim), lang. Refresh tokens carry only userId — request a fresh access token via `/api/v1/auth/refresh` to get the other claims again. Roles: AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK.
 
 ## Database
 
