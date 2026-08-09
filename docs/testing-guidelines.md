@@ -1,5 +1,7 @@
 # Beduno Backend - Testing Guidelines
 
+> Reconciled against the implementation on 2026-08-09.
+
 ## Testing Philosophy
 
 - Tests verify behavior, not implementation
@@ -9,10 +11,10 @@
 
 ## Test Pyramid
 
+There is no separate E2E tier in this codebase - just two layers in practice. Full-lifecycle coverage (arrivals, check-in, inspection) lives as `@Nested` classes inside the integration tests (e.g. `OperationalWorkflowIntegrationTest.FullLifecycle`), not as a distinct test type or dependency. There is no RestAssured dependency anywhere in `build.gradle.kts`; every HTTP-level test uses Spring's `TestRestTemplate`.
+
 ```
-         ╱  E2E  ╲           Few: critical workflows only
-        ╱─────────╲
-       ╱Integration ╲        Medium: API + DB together
+       ╱Integration ╲        Medium: API + DB together, including full-workflow scenarios
       ╱───────────────╲
      ╱    Unit Tests    ╲     Many: services, constraints, logic
     ╱─────────────────────╲
@@ -21,8 +23,7 @@
 | Layer | Scope | Tools | Speed |
 |-------|-------|-------|-------|
 | Unit | Service logic, constraint engine, mappers | JUnit 5, Mockito (for external deps only) | Fast |
-| Integration | Controller + Service + DB | Spring Boot Test, Testcontainers (PostgreSQL) | Medium |
-| E2E | Full workflow (arrivals, check-in, inspection) | Spring Boot Test, RestAssured | Slower |
+| Integration | Controller + Service + DB, including full-workflow scenarios as `@Nested` classes | Spring Boot Test, `TestRestTemplate`, Testcontainers (PostgreSQL) | Medium |
 
 ## Unit Tests
 
@@ -34,7 +35,7 @@
 
 ### Conventions
 - Test class: `{ClassName}Test.java` in the same package under `src/test`
-- Test method naming: `should{ExpectedBehavior}_when{Condition}`
+- Test method naming: `should{ExpectedBehavior}_when{Condition}`. The `_when{Condition}` clause may be omitted when a `@Nested` class already supplies the condition (e.g. a `@Nested class CapacityConstraint` containing `shouldRejectCheckIn()`) - don't invent a redundant condition just to satisfy the pattern. In the current suite, roughly 48 of ~110 `should*` test methods rely on this exemption
 - One assertion per test (logical assertion - multiple `assertThat` calls on the same result are fine)
 - Use `@Nested` classes to group related scenarios
 
@@ -109,34 +110,50 @@ public class TestBuilders {
 - **Tenant isolation**: verify that queries never leak data across agencies
 - **Permission checks**: verify role-based access control on endpoints
 - **Full workflows**: create property -> add rooms -> import workers -> create stays -> check-in
+- **Guard rails**: verify state-change guards reject invalid operations (e.g. `property/DeletionGuardIntegrationTest` for property/room deletion guards, `stay/StayGuardIntegrationTest` for stay-mutation guards)
 
 ### Base Class
 
+The real `IntegrationTestBase` does **not** use the `@Testcontainers`/`@Container` annotation-driven lifecycle. Instead it starts a single `static` `PostgreSQLContainer` in a static initializer block, so the container is a singleton shared across every integration test class in the run (started once, never stopped, reused via Testcontainers' Ryuk cleanup at JVM exit) rather than started/stopped per test class. This keeps the suite fast - one container spin-up for the whole run instead of one per class - at the cost of tests needing to clean up their own state (see Test Data Management below). Wiring into Spring still goes through `@DynamicPropertySource`, and `authHeaders` takes the `Role` enum, not a raw `String`:
+
 ```java
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-abstract class IntegrationTestBase {
+public abstract class IntegrationTestBase {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> postgres;
+
+    static {
+        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        registry.add("spring.flyway.enabled", () -> "true");
     }
 
     @Autowired
     protected TestRestTemplate restTemplate;
 
-    protected HttpHeaders authHeaders(String role, UUID agencyId) {
-        // Generate a test JWT with the given role and agency
+    protected HttpHeaders authHeaders(Role role, UUID agencyId) {
+        // Generates a test JWT with the given role and agency via JwtTokenProvider
     }
 }
 ```
 
+`IntegrationTestBase` also provides seeding helpers that write directly via `JdbcTemplate`, bypassing service-layer validation, to satisfy foreign-key constraints without pulling in unrelated setup:
+- `ensureAgencyExists(UUID agencyId)` - inserts a minimal `agencies` row if one doesn't already exist for that id
+- `ensureUserExists(UUID userId, UUID agencyId)` - inserts a minimal `users` row if one doesn't already exist for that id
+
+Call `ensureUserExists` before any test that sets a `confirmed_by_user_id` (or similar user-referencing) column - skipping it hits a foreign-key violation, since that column references `users(id)`.
+
 ### Tenant Isolation Tests
+
+This is the required pattern for a tenant-isolation test: assert that the *other* agency's data is absent from the response (`doesNotContain(...)`), not merely that the querying agency's own data is present. This is not a style nitpick - a test that only checks its own row appears would still pass even if the endpoint leaked every other agency's data too. Two existing tests currently fall short of this and should be treated as gaps to fix, not as examples to copy: `WorkerIntegrationTest.shouldNotReturnWorkersFromOtherAgency` leaves the exclusion check as a comment with no actual assertion, and `PropertyIntegrationTest.shouldNotReturnPropertiesFromOtherAgency` asserts presence of its own row (queried with the same agency's credentials that created it) rather than absence of the other agency's data.
 
 ```java
 @Test
@@ -149,7 +166,7 @@ void shouldNotReturnWorkersFromOtherAgency() {
     var response = restTemplate.exchange(
         "/api/v1/workers",
         HttpMethod.GET,
-        new HttpEntity<>(authHeaders("AGENCY_ADMIN", agency1Id)),
+        new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN, agency1Id)),
         WorkerListResponse.class
     );
 
@@ -202,3 +219,4 @@ void shouldNotReturnWorkersFromOtherAgency() {
 - Test containers require Docker in CI
 - Target: tests complete in < 3 minutes for the full suite
 - No flaky tests - if a test is flaky, fix it or delete it
+- No code coverage tooling (e.g. JaCoCo) is configured in `build.gradle.kts`, so there is no measured or enforced coverage target - "adequate coverage" is a judgment call based on the rules above (constraint engine, tenant isolation, permissions, workflows, guards), not a percentage gate

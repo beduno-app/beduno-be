@@ -1,5 +1,7 @@
 # Beduno Backend - Coding Guidelines
 
+> Reconciled against the implementation on 2026-08-09.
+
 ## Java Conventions
 
 ### Version & Language Features
@@ -51,7 +53,7 @@ public class StayController {
 
 ### Services
 - All business logic lives in services
-- Services are transactional at the method level (`@Transactional`)
+- Services are transactional at the method level (`@Transactional`), with `AuthService.refresh` and `AuthService.getCurrentUser` as the current exceptions (no `@Transactional`) - keep new read/token methods consistent with the rest of the codebase unless there's a specific reason not to
 - Services call the constraint engine before state changes
 - Services call the audit service after state changes
 - Throw domain-specific exceptions (`NotFoundException`, `ConflictException`, etc.)
@@ -106,8 +108,10 @@ BusinessException (abstract)
 ├── ConflictException          -> 409 (e.g., double booking)
 ├── ConstraintViolationException -> 422 (hard constraint violated)
 ├── ForbiddenException         -> 403
+├── UnauthorizedException      -> 401 (bad credentials / invalid, expired, or unresolvable refresh token)
 └── ValidationException        -> 400
 ```
+`UnauthorizedException` is distinct from `ForbiddenException`: it means the caller cannot be authenticated at all, whereas `ForbiddenException` means the caller is known but lacks the required role.
 
 ### Error Response Format
 ```json
@@ -122,14 +126,14 @@ BusinessException (abstract)
       "params": { "roomNumber": "12", "capacity": 4, "current": 4 }
     }
   ],
-  "timestamp": "2026-04-14T12:00:00Z",
-  "traceId": "abc-123"
+  "timestamp": "2026-04-14T12:00:00Z"
 }
 ```
 
 - `message` is always a message code, never a hardcoded string
 - Frontend resolves codes to localized messages
 - `GlobalExceptionHandler` maps all exceptions to this format
+- `ErrorResponse` also declares a `traceId` field (omitted above because it's `null`ed out by `@JsonInclude(NON_NULL)`): `ErrorResponse.of(...)` always passes `null` for it, so **no real response currently populates `traceId`**. The correlation plumbing exists - `TenantFilter` puts a per-request `requestId` into MDC (alongside `agencyId`/`userId`) for log correlation - but it is not wired into the error response body. Wiring `requestId` through to `traceId` would be a natural follow-up if client-visible correlation IDs are needed.
 
 ## Database
 
@@ -187,10 +191,15 @@ Response wraps in:
 
 ## Code Quality
 
+### Checkstyle
+- Checkstyle is wired into the build (`build.gradle.kts`, `checkstyle` plugin) against `config/checkstyle/checkstyle.xml`, with `isIgnoreFailures = false` - a violation fails `./gradlew build`, not just a lint warning
+- Rule families actually enforced: no tab characters in files; import hygiene (unused/redundant/illegal imports); naming (types, constants, local variables, members, methods, parameters, static variables, packages); block structure (braces required, brace placement, no empty blocks); coding rules (one statement per line, no multi-variable declarations, switch fall-through, `default` last, boolean expression/return simplification, no `==` on strings, `equals`/`hashCode` pairing, no hidden fields except in constructors/setters); whitespace around generics, parens, and operators; modifier order and redundant-modifier checks; and misc rules (no `L`-suffix ambiguity, array bracket style, one outer type per file)
+- There is **no line-length rule and no Javadoc rule** - don't assume either is enforced
+
 ### Logging
 - Use SLF4J with structured logging
-- Log at service entry points (INFO) and on errors (ERROR)
-- Include `agencyId` and `userId` in MDC for request correlation
+- **Not currently followed in practice**: "log at service entry points (INFO) and on errors (ERROR)" is the aspiration, not the current state. As of this writing only three classes use `@Slf4j` (`StayScheduler`, `GlobalExceptionHandler`, `WorkerService`), and there is exactly one `log.info` call in `src/main/java` (`StayScheduler`, which is a `@Component`/`@Scheduled` job, not a `@Service`). `GlobalExceptionHandler` has the only `log.error` call, for unhandled exceptions. Do not assume services log at entry or on error today - add logging deliberately rather than relying on convention
+- Include `agencyId` and `userId` in MDC for request correlation - this part is implemented: `TenantFilter` puts `requestId`, `agencyId`, and `userId` into MDC for every request
 - Never log passwords, tokens, or PII
 
 ### Dependency Injection
