@@ -73,7 +73,7 @@ public class OccupancyController {
                 propertyId, date != null ? date : LocalDate.now(), request));
     }
 
-    @Operation(summary = "Export occupancy CSV", description = "Downloads nightly occupancy list as CSV. Supports language parameter (EN, PL).")
+    @Operation(summary = "Export occupancy CSV", description = "Downloads nightly occupancy list as CSV. Supports language parameter (EN, PL, DE, RU, UA).")
     @GetMapping("/occupancy/export")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<byte[]> exportOccupancy(
@@ -84,7 +84,7 @@ public class OccupancyController {
         return csvResponse(csv, "occupancy");
     }
 
-    @Operation(summary = "Export arrivals CSV", description = "Downloads arrivals list as CSV. Supports language parameter (EN, PL).")
+    @Operation(summary = "Export arrivals CSV", description = "Downloads arrivals list as CSV. Supports language parameter (EN, PL, DE, RU, UA).")
     @GetMapping("/arrivals/export")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<byte[]> exportArrivals(
@@ -95,7 +95,7 @@ public class OccupancyController {
         return csvResponse(csv, "arrivals");
     }
 
-    @Operation(summary = "Export exceptions CSV", description = "Downloads exception report as CSV. Supports language parameter (EN, PL).")
+    @Operation(summary = "Export exceptions CSV", description = "Downloads exception report as CSV. Supports language parameter (EN, PL, DE, RU, UA).")
     @GetMapping("/exceptions/export")
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN')")
     public ResponseEntity<byte[]> exportExceptions(

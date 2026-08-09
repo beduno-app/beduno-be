@@ -76,8 +76,10 @@ public class PropertyController {
         return ResponseEntity.ok(propertyService.update(id, request));
     }
 
-    @Operation(summary = "Delete property", description = "Soft-deletes the property")
+    @Operation(summary = "Delete property",
+            description = "Permanently deletes the property. Refused while any room or stay still references it.")
     @ApiResponse(responseCode = "204", description = "Property deleted")
+    @ApiResponse(responseCode = "409", description = "Property still has rooms or referencing stays")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('AGENCY_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {

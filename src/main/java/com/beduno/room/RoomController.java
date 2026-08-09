@@ -77,8 +77,10 @@ public class RoomController {
         return ResponseEntity.ok(roomService.update(propertyId, roomId, request));
     }
 
-    @Operation(summary = "Delete room")
+    @Operation(summary = "Delete room",
+            description = "Permanently deletes the room. Refused while any stay still references it.")
     @ApiResponse(responseCode = "204", description = "Room deleted")
+    @ApiResponse(responseCode = "409", description = "Room still has referencing stays")
     @DeleteMapping("/{roomId}")
     @PreAuthorize("hasRole('AGENCY_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID propertyId,
