@@ -4,6 +4,7 @@ import com.beduno.auth.dto.AuthResponse;
 import com.beduno.auth.dto.LoginRequest;
 import com.beduno.auth.dto.RefreshRequest;
 import com.beduno.common.exception.NotFoundException;
+import com.beduno.common.exception.UnauthorizedException;
 import com.beduno.user.User;
 import com.beduno.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +27,10 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         var user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new NotFoundException("error.auth.invalid_credentials"));
+                .orElseThrow(() -> new UnauthorizedException("error.auth.invalid_credentials"));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new NotFoundException("error.auth.invalid_credentials");
+            throw new UnauthorizedException("error.auth.invalid_credentials");
         }
 
         user.setLastLoginAt(Instant.now());
@@ -38,12 +39,14 @@ public class AuthService {
 
     public AuthResponse refresh(RefreshRequest request) {
         if (!jwtTokenProvider.validateToken(request.refreshToken())) {
-            throw new NotFoundException("error.auth.invalid_refresh_token");
+            throw new UnauthorizedException("error.auth.invalid_refresh_token");
         }
 
         var userId = jwtTokenProvider.getUserId(request.refreshToken());
+        // A token whose subject no longer exists is an invalid token, not a missing
+        // resource — reporting it as 404 would leak whether an account was deleted.
         var user = userRepository.findById(userId)
-                .orElseThrow(() -> new NotFoundException("error.auth.user_not_found"));
+                .orElseThrow(() -> new UnauthorizedException("error.auth.invalid_refresh_token"));
 
         return buildAuthResponse(user);
     }

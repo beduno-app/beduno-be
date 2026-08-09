@@ -17,17 +17,18 @@ class AuthIntegrationTest extends IntegrationTestBase {
     class Login {
 
         @Test
-        void shouldReturnErrorForNonexistentUser() {
+        void shouldReturnUnauthorized_whenUserDoesNotExist() {
             var request = new LoginRequest("nonexistent@agency.pl", "password");
             var response = restTemplate.postForEntity(
                     "/api/v1/auth/login", request, String.class
             );
-            // User doesn't exist -> NotFoundException -> 404
-            assertThat(response.getStatusCode().is4xxClientError()).isTrue();
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("\"error\":\"UNAUTHORIZED\"");
+            assertThat(response.getBody()).contains("error.auth.invalid_credentials");
         }
 
         @Test
-        void shouldReturnBadRequestForMissingFields() {
+        void shouldReturnBadRequest_whenFieldsAreMissing() {
             var request = java.util.Map.of("email", "", "password", "");
             var response = restTemplate.postForEntity(
                     "/api/v1/auth/login", request, String.class
@@ -40,13 +41,13 @@ class AuthIntegrationTest extends IntegrationTestBase {
     class Refresh {
 
         @Test
-        void shouldRejectInvalidRefreshToken() {
+        void shouldReturnUnauthorized_whenRefreshTokenIsInvalid() {
             var request = java.util.Map.of("refreshToken", "invalid-token");
             var response = restTemplate.postForEntity(
                     "/api/v1/auth/refresh", request, String.class
             );
-            // Invalid token -> NotFoundException -> 404
-            assertThat(response.getStatusCode().is4xxClientError()).isTrue();
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("error.auth.invalid_refresh_token");
         }
     }
 
@@ -54,15 +55,45 @@ class AuthIntegrationTest extends IntegrationTestBase {
     class Me {
 
         @Test
-        void shouldReturnErrorForNonexistentJwtUser() {
+        void shouldReturnNotFound_whenJwtSubjectHasNoUserRow() {
             var headers = authHeaders(Role.AGENCY_ADMIN);
-            // JWT is valid but user doesn't exist in DB
+            // JWT is structurally valid but its subject has no row in users.
             var response = restTemplate.exchange(
                     "/api/v1/auth/me", HttpMethod.GET,
                     new HttpEntity<>(headers), String.class
             );
-            assertThat(response.getStatusCode()).isNotEqualTo(HttpStatus.UNAUTHORIZED);
-            assertThat(response.getStatusCode()).isNotEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    @Nested
+    class ProtectedEndpoints {
+
+        @Test
+        void shouldReturnUnauthorizedWithErrorBody_whenNoTokenIsSupplied() {
+            var response = restTemplate.getForEntity("/api/v1/workers", String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("\"error\":\"UNAUTHORIZED\"");
+            assertThat(response.getBody()).contains("error.auth.unauthorized");
+        }
+
+        @Test
+        void shouldReturnForbiddenWithErrorBody_whenRoleIsInsufficient() {
+            var headers = authHeaders(Role.FRONT_DESK);
+            var body = java.util.Map.of(
+                    "internalId", "W-001",
+                    "firstName", "Jan",
+                    "lastName", "Kowalski",
+                    "gender", "MALE");
+
+            var response = restTemplate.exchange(
+                    "/api/v1/workers", HttpMethod.POST,
+                    new HttpEntity<>(body, headers), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getBody()).contains("\"error\":\"FORBIDDEN\"");
         }
     }
 }

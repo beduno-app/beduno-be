@@ -1,6 +1,8 @@
 package com.beduno.config;
 
 import com.beduno.common.security.RateLimitFilter;
+import com.beduno.common.security.RestAccessDeniedHandler;
+import com.beduno.common.security.RestAuthenticationEntryPoint;
 import com.beduno.common.security.TenantFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +28,8 @@ public class SecurityConfig {
 
     private final TenantFilter tenantFilter;
     private final RateLimitFilter rateLimitFilter;
+    private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final RestAccessDeniedHandler accessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -39,10 +43,15 @@ public class SecurityConfig {
                                 .includeSubDomains(true)
                                 .maxAgeInSeconds(31536000))
                 )
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
+                                "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)

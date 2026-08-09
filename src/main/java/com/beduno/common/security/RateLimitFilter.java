@@ -1,11 +1,14 @@
 package com.beduno.common.security;
 
+import com.beduno.common.exception.ErrorResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -16,11 +19,13 @@ import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final int MAX_REQUESTS_PER_MINUTE = 10;
     private static final String RATE_LIMITED_PATH_PREFIX = "/api/v1/auth/";
 
+    private final ObjectMapper objectMapper;
     private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
 
     @Override
@@ -38,7 +43,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         } else {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write("{\"code\":\"RATE_LIMIT_EXCEEDED\",\"message\":\"error.rate_limit_exceeded\"}");
+            objectMapper.writeValue(
+                    response.getWriter(),
+                    ErrorResponse.of("RATE_LIMIT_EXCEEDED", "error.rate_limit_exceeded"));
         }
     }
 

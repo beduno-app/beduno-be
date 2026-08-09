@@ -49,4 +49,4 @@ JWT-based stateless auth. Tokens carry: userId, agencyId, role, assignedProperty
 
 ## Commit Convention
 
-Prefix commit messages with `[claude-opus-4.6]` when AI-generated.
+Prefix AI-generated commit messages with the model that actually wrote the code, in brackets — read the active model from the session environment rather than copying a value from here (e.g. `[claude-opus-5] Add constraint engine`). Never add a `Co-Authored-By` trailer.
