@@ -164,7 +164,7 @@ public class StayService {
         }
         var previous = snapshot(stay);
         stay.setStatus(StayStatus.NO_SHOW);
-        stay.setNotes(request.reasonTag());
+        stay.setNoShowReason(request.reasonTag());
         stay = stayRepository.save(stay);
         auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.NO_SHOW, previous, snapshot(stay), request.reasonTag());
@@ -189,6 +189,14 @@ public class StayService {
         var today = LocalDate.now();
 
         var originalDateTo = stay.getDateTo();
+
+        // The replacement stay runs [today, originalDateTo), which the chk_stays_dates
+        // CHECK rejects unless date_to is strictly after date_from. On the final day
+        // there is no night left to reassign, so refuse instead of failing at the DB.
+        if (originalDateTo != null && !originalDateTo.isAfter(today)) {
+            throw new ConflictException("error.stay.cannot_move_on_last_day");
+        }
+
         var ctx = new ConstraintContext(worker, targetRoom, property,
                 today, originalDateTo, stay.getId());
         runConstraints(ctx, request.overrideReason());
@@ -389,6 +397,9 @@ public class StayService {
         map.put("dateFrom", stay.getDateFrom().toString());
         if (stay.getDateTo() != null) {
             map.put("dateTo", stay.getDateTo().toString());
+        }
+        if (stay.getNoShowReason() != null) {
+            map.put("noShowReason", stay.getNoShowReason());
         }
         return map;
     }

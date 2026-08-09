@@ -15,6 +15,7 @@ public record StayResponse(
         LocalDate dateTo,
         StayStatus status,
         String overrideReason,
+        String noShowReason,
         String notes,
         Instant createdAt,
         Instant updatedAt

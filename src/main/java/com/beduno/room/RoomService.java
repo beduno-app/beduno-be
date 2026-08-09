@@ -13,6 +13,7 @@ import com.beduno.property.PropertyService;
 import com.beduno.room.dto.CreateRoomRequest;
 import com.beduno.room.dto.RoomResponse;
 import com.beduno.room.dto.UpdateRoomRequest;
+import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -31,6 +32,7 @@ public class RoomService {
     private final RoomMapper roomMapper;
     private final PropertyService propertyService;
     private final AuditService auditService;
+    private final StayRepository stayRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
@@ -91,6 +93,12 @@ public class RoomService {
     @Transactional
     public void delete(UUID propertyId, UUID roomId) {
         var room = getRoomOrThrow(propertyId, roomId);
+
+        // stays.room_id is a RESTRICT foreign key — see PropertyService.delete.
+        if (stayRepository.countByAgencyIdAndRoomId(room.getAgencyId(), roomId) > 0) {
+            throw new ConflictException("error.room.has_stays");
+        }
+
         var previous = snapshot(room);
         roomRepository.delete(room);
         auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),

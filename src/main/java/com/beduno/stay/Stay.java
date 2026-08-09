@@ -47,6 +47,9 @@ public class Stay extends BaseEntity {
     @Column(name = "confirmed_by_user_id")
     private UUID confirmedByUserId;
 
+    @Column(name = "no_show_reason")
+    private String noShowReason;
+
     @Column
     private String notes;
 

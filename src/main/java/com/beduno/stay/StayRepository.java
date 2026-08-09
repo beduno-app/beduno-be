@@ -15,6 +15,16 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
 
     Optional<Stay> findByIdAndAgencyId(UUID id, UUID agencyId);
 
+    /**
+     * Counts every stay referencing a property, terminal ones included. Deleting a
+     * property is blocked while any row references it, because stays.property_id is
+     * a RESTRICT foreign key and the delete would otherwise fail at the database.
+     */
+    long countByAgencyIdAndPropertyId(UUID agencyId, UUID propertyId);
+
+    /** Counts every stay referencing a room, for the same reason as above. */
+    long countByAgencyIdAndRoomId(UUID agencyId, UUID roomId);
+
     @Query(value = """
             SELECT * FROM stays s
             WHERE s.agency_id = :agencyId

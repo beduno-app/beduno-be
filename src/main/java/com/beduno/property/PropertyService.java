@@ -3,6 +3,7 @@ package com.beduno.property;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
+import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.CurrentUser;
@@ -10,6 +11,8 @@ import com.beduno.common.security.TenantContext;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
 import com.beduno.property.dto.UpdatePropertyRequest;
+import com.beduno.room.RoomRepository;
+import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,6 +30,8 @@ public class PropertyService {
     private final PropertyRepository propertyRepository;
     private final PropertyMapper propertyMapper;
     private final AuditService auditService;
+    private final RoomRepository roomRepository;
+    private final StayRepository stayRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<PropertyResponse> findAll(PropertyStatus status, String search, Pageable pageable) {
@@ -69,6 +74,18 @@ public class PropertyService {
     @Transactional
     public void delete(UUID id) {
         var property = getPropertyOrThrow(id);
+        var agencyId = property.getAgencyId();
+
+        // rooms.property_id and stays.property_id are RESTRICT foreign keys, so a
+        // referenced property cannot be removed. Refuse with 409 rather than letting
+        // the delete fail at the database as an opaque 500.
+        if (roomRepository.countByAgencyIdAndPropertyId(agencyId, id) > 0) {
+            throw new ConflictException("error.property.has_rooms");
+        }
+        if (stayRepository.countByAgencyIdAndPropertyId(agencyId, id) > 0) {
+            throw new ConflictException("error.property.has_stays");
+        }
+
         var previous = snapshot(property);
         propertyRepository.delete(property);
         auditService.log(property.getAgencyId(), currentUserId(), AuditEntityType.PROPERTY, property.getId(),
