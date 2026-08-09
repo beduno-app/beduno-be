@@ -104,6 +104,34 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().noShowReason()).isEqualTo("TRANSPORT_DELAY");
             assertThat(response.getBody().notes()).isEqualTo("Arrives by night bus");
         }
+
+        @Test
+        void shouldReturnBadRequest_whenReasonTagExceedsColumnLength() {
+            var property = createProperty();
+            var room = createRoom(property.id());
+            var stay = plannedStay(property.id(), room.id());
+            jdbcTemplate.update("UPDATE stays SET status = 'EXPECTED_TODAY' WHERE id = ?", stay.id());
+
+            // stays.no_show_reason is VARCHAR(100); without @Size this was a 500.
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/no-show", HttpMethod.POST,
+                    new HttpEntity<>(new NoShowRequest("X".repeat(101)),
+                            authHeaders(Role.FRONT_DESK)),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private StayResponse plannedStay(UUID propertyId, UUID roomId) {
+        var worker = createWorker();
+        var request = new CreateStayRequest(
+                worker.id(), propertyId, roomId,
+                LocalDate.now(), LocalDate.now().plusDays(4), null, null);
+        return restTemplate.exchange(
+                "/api/v1/stays", HttpMethod.POST,
+                new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
+                StayResponse.class).getBody();
     }
 
     private StayResponse checkedInStay(UUID propertyId, UUID roomId,

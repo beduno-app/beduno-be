@@ -31,6 +31,9 @@ defect fixes applied. Each is reversible; none is load-bearing.
 | D6 | `RateLimitFilter`'s 429 body changed from `{"code":...}` to the standard `ErrorResponse` envelope | It was the only endpoint in the system emitting a different error shape, and the shape was undocumented | Any client parsing the old key would break. Judged very low risk since it was never specified |
 | D7 | New i18n values written as raw UTF-8, not `\uXXXX` escapes | `spring.messages.encoding: UTF-8` is set explicitly, and hand-escaping Cyrillic is error-prone | None functionally; the bundles now mix both styles |
 | D8 | Property scoping and override permissions documented as-is rather than enforced | Explicitly chosen: document now, ticket the fix. See section 2 | The docs no longer over-promise, but the gap is real and unmitigated |
+| D9 | `messages_ua.properties` renamed to `messages_uk.properties` | `ExportService` resolves `Locale("uk")` and `WebConfig` registers `uk`, so the `_ua` file was never loaded and Ukrainian silently served English. `uk` is the ISO 639-1 code | None — the public API parameter is still `UA`. Had the previous commit shipped alone, the UA translations would have been dead weight |
+| D10 | `NoShowRequest.reasonTag` bounded with `@Size(max = 100)` | D2 moved the reason from `notes` (unbounded TEXT) to `VARCHAR(100)`, which would have turned a long tag into a 500. This closes a hole D2 opened | None |
+| D11 | Two `@Operation` descriptions corrected in code | They are published in the OpenAPI document, so they are user-facing docs: property delete claimed a soft delete, and the exports claimed EN/PL only | None |
 
 ---
 
@@ -83,6 +86,23 @@ evicted. Unbounded memory growth under sustained traffic from many source addres
 `UNIQUE (agency_id, email)` — the same address can legitimately exist in two
 agencies, and login would resolve non-deterministically. Either scope login by
 agency or make email globally unique.
+
+### S7 — `/auth/refresh` accepts an access token as a refresh token
+
+`AuthService.refresh` calls `validateToken` and `getUserId` but never checks the
+`type` claim. `JwtTokenProvider` stamps refresh tokens with `type: "refresh"`, and
+nothing verifies it — so any valid access token can be exchanged for a fresh 7-day
+refresh token. Access tokens are the more widely exposed of the two, which makes
+this a privilege-lifetime escalation. One-line fix; left alone only because it was
+outside the approved scope for this pass.
+
+### S8 — `GET /auth/me` returns 500 when called anonymously
+
+`SecurityConfig` permits `/api/v1/auth/**` wholesale, so an unauthenticated call
+reaches `AuthController.me`, where the `@AuthenticationPrincipal` is null and
+`currentUser.userId()` throws. The catch-all handler turns it into a 500. It should
+require authentication and return 401 like every other protected endpoint. Note the
+new `RestAuthenticationEntryPoint` cannot help here — the request never reaches it.
 
 ### S6 — No row-level security
 
@@ -177,6 +197,62 @@ Either adopt the convention or drop it from the guidelines.
 `implementation-plan.md` chose time-ordered UUID v7 for sortability and index
 locality. `BaseEntity` uses `GenerationType.UUID` and the migrations use
 `gen_random_uuid()` — both random v4. The stated benefit was never realised.
+
+**Q16 — Client errors surface as 500.**
+`GlobalExceptionHandler` declares `@ExceptionHandler(Exception.class)` and does not
+extend `ResponseEntityExceptionHandler`, so Spring MVC's own exceptions fall into
+the catch-all. A missing required query parameter (`GET /stays/arrivals` with no
+`propertyId`), an unparseable UUID, date or enum, malformed JSON, or an empty body
+all return 500 instead of 400. This is probably the highest-volume correctness bug
+in the codebase — every malformed client request is misreported.
+
+**Q17 — `roomId` is never checked against `propertyId`.**
+Stay create, stay update, the check-in room override and move all resolve the room
+by agency only (`getRoomOrThrow`). A room belonging to a different property is
+accepted, and the stay keeps its original, now-wrong `propertyId`.
+
+**Q18 — No `dateTo > dateFrom` validation at the DTO layer.**
+`CreateStayRequest`, `UpdateStayRequest` and `CheckOutRequest.actualDateTo` are
+unvalidated, so an inverted range reaches the `chk_stays_dates` CHECK and returns
+500 rather than 400.
+
+**Q19 — Check-in corrupts its own audit record.**
+`StayService.checkIn` assigns `stay.setRoomId(request.roomId())` *before* taking
+`var previous = snapshot(stay)`. When a check-in overrides the room, the "previous
+state" already contains the new room, so the original assignment is lost from the
+audit trail — precisely the fact an inspection would need.
+
+**Q20 — Move leaves the original stay's `dateTo` untouched.**
+The closed stay keeps its original end date while the replacement runs from today,
+so the two overlap in any date-range query. The replacement also drops the
+original's `notes` and never persists the caller's `overrideReason`.
+
+**Q21 — Bulk operations can report partial success and then roll back entirely.**
+`bulkAssign` and `bulkCheckout` catch per-item exceptions inside a single
+`@Transactional` method. Any JPA exception marks the transaction rollback-only, so
+a response saying "3 created, 1 error" can still fail wholesale at commit. The
+per-item `errorCode` is also `e.getMessage()`, which leaks raw exception text for
+anything that is not a `BusinessException`.
+
+**Q22 — Occupancy endpoints do not verify the property exists.**
+`occupancy`, `exceptions`, `inspection` and the three exports return an empty array
+or a header-only CSV for an unknown or foreign `propertyId`, instead of 404.
+
+**Q23 — `PUT /workers/{id}` can set `status: DELETED` without `deletedAt`.**
+That produces a state the `DELETE` endpoint would never create, and read filters
+key off `status`, so the two paths disagree.
+
+**Q24 — CSV export filenames always use today's date**, ignoring `?date=`.
+
+**Q25 — `Gender.OTHER` violates both `MALE_ONLY` and `FEMALE_ONLY`.**
+Probably intended, but it means a worker with `OTHER` can only be placed in an
+`ANY` room. Confirm it is a product decision.
+
+**Q26 — Dead code.** `WorkerSummary` and `StaySummary` and their mapper methods are
+returned by no endpoint. `StayService.toStringMap` returns its argument unchanged.
+
+**Q27 — `Agency.status` and `User.status` are raw `String`s** while every other
+status field in the domain is an `@Enumerated` enum.
 
 ---
 
