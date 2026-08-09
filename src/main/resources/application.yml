@@ -1,14 +1,14 @@
 spring:
   application:
-    name: bedok-be
+    name: beduno-be
   messages:
     basename: i18n/messages
     encoding: UTF-8
     fallback-to-system-locale: false
   datasource:
-    url: jdbc:postgresql://localhost:5432/bedok
-    username: bedok
-    password: bedok
+    url: jdbc:postgresql://localhost:5432/beduno
+    username: beduno
+    password: beduno
   jpa:
     hibernate:
       ddl-auto: validate
@@ -34,10 +34,10 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
 
-bedok:
+beduno:
   scheduler:
     arrival-transition-cron: "0 0 6 * * *"
   jwt:
-    secret: ${JWT_SECRET:bedok-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}
+    secret: ${JWT_SECRET:beduno-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}
     access-token-expiration-ms: 3600000
     refresh-token-expiration-ms: 604800000

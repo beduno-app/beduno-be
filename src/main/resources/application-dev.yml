@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/bedok
-    username: bedok
-    password: bedok
+    url: jdbc:postgresql://localhost:5432/beduno
+    username: beduno
+    password: beduno
   jpa:
     show-sql: true
     properties:

@@ -1,20 +1,20 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: bedok-postgres
+    container_name: beduno-postgres
     environment:
-      POSTGRES_DB: bedok
-      POSTGRES_USER: bedok
-      POSTGRES_PASSWORD: bedok
+      POSTGRES_DB: beduno
+      POSTGRES_USER: beduno
+      POSTGRES_PASSWORD: beduno
     ports:
       - "5432:5432"
     volumes:
-      - bedok-pgdata:/var/lib/postgresql/data
+      - beduno-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bedok -d bedok"]
+      test: ["CMD-SHELL", "pg_isready -U beduno -d beduno"]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
-  bedok-pgdata:
+  beduno-pgdata:

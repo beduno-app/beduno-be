@@ -14,7 +14,7 @@ public class StayScheduler {
 
     private final StayService stayService;
 
-    @Scheduled(cron = "${bedok.scheduler.arrival-transition-cron:0 0 6 * * *}")
+    @Scheduled(cron = "${beduno.scheduler.arrival-transition-cron:0 0 6 * * *}")
     public void transitionArrivalsToExpectedToday() {
         var today = LocalDate.now();
         var count = stayService.transitionPlannedToExpectedToday(today);

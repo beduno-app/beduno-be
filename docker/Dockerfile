@@ -8,10 +8,10 @@ RUN ./gradlew bootJar --no-daemon -x test
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN addgroup -S bedok && adduser -S bedok -G bedok
+RUN addgroup -S beduno && adduser -S beduno -G beduno
 COPY --from=build /app/build/libs/*.jar app.jar
-RUN chown bedok:bedok app.jar
-USER bedok
+RUN chown beduno:beduno app.jar
+USER beduno
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s \
   CMD wget -qO- http://localhost:8080/actuator/health || exit 1

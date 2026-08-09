@@ -1,1 +1,1 @@
-rootProject.name = "bedok-be"
+rootProject.name = "beduno-be"
