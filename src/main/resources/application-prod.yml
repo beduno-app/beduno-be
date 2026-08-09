@@ -8,5 +8,5 @@ spring:
 
 logging:
   level:
-    com.bedok: INFO
+    com.beduno: INFO
     org.springframework.security: WARN

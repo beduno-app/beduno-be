@@ -11,5 +11,5 @@ spring:
 
 logging:
   level:
-    com.bedok: DEBUG
+    com.beduno: DEBUG
     org.springframework.security: DEBUG

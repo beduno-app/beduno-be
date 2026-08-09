@@ -22,7 +22,7 @@
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
         </root>
-        <logger name="com.bedok" level="INFO"/>
+        <logger name="com.beduno" level="INFO"/>
         <logger name="org.springframework.security" level="WARN"/>
     </springProfile>
 
