@@ -51,3 +51,10 @@ Thumbs.db
 
 # Docker
 docker/pgdata/
+
+# Agent skills installed via `npx skills add`. Third-party content under the
+# vendor's own terms — keep it local rather than redistributing it through this
+# repo. .claude/skills/ holds symlinks into .agents/skills/.
+.agents/
+.claude/skills/
+skills-lock.json
