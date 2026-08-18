@@ -52,9 +52,12 @@ Thumbs.db
 # Docker
 docker/pgdata/
 
-# Agent skills installed via `npx skills add`. Third-party content under the
-# vendor's own terms — keep it local rather than redistributing it through this
-# repo. .claude/skills/ holds symlinks into .agents/skills/.
+# Third-party agent content, kept local rather than redistributed through this
+# repo. `npx skills add` writes .agents/skills/ plus skills-lock.json; the
+# 10xDevs CLI (`10x get` / `10x sync`) writes paid course material into
+# .claude/skills/, .claude/prompts/ and .claude/config-templates/. Ignoring
+# .claude/ wholesale also covers artifact types future lessons may introduce.
 .agents/
-.claude/skills/
+.claude/
+!.claude/settings.json
 skills-lock.json
