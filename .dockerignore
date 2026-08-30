@@ -1,0 +1,16 @@
+# The Dockerfile builds from the repo root, so without this the whole working tree --
+# including build/ (a ~66MB jar), .git/ and the Gradle caches -- is uploaded to the daemon.
+.git
+.gitignore
+build
+.gradle
+.idea
+*.iml
+.agents
+.claude
+context
+docs
+deploy
+README.md
+AGENTS.md
+CLAUDE.md

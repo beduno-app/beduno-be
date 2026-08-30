@@ -57,11 +57,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return Bucket.builder().addLimit(limit).build();
     }
 
+    /**
+     * Deliberately does not read {@code X-Forwarded-For}. That header is appended to by every hop,
+     * so its left-most entry is supplied by the caller: trusting it let anyone bypass this throttle
+     * by sending a different value on each request. Behind a reverse proxy the trustworthy client
+     * address comes from {@code server.forward-headers-strategy: native} (Tomcat's RemoteIpValve),
+     * which resolves the first untrusted hop into {@code getRemoteAddr()}. Without a proxy this is
+     * simply the peer address.
+     */
     private String resolveClientIp(HttpServletRequest request) {
-        var forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
     }
 }

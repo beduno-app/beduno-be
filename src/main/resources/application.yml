@@ -38,6 +38,6 @@ beduno:
   scheduler:
     arrival-transition-cron: "0 0 6 * * *"
   jwt:
-    secret: ${JWT_SECRET:beduno-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}
+    secret: ${JWT_SECRET}
     access-token-expiration-ms: 3600000
     refresh-token-expiration-ms: 604800000

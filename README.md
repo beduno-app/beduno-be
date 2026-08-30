@@ -19,8 +19,9 @@ Worker housing management system for temporary work agencies.
 # 1. Start PostgreSQL
 docker compose -f docker/docker-compose.yml up -d
 
-# 2. Run the application
-./gradlew bootRun
+# 2. Run the application (the dev profile supplies a JWT signing key;
+#    the default profile deliberately has none - see Environment Variables)
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
 
 # API available at http://localhost:8080
 # Swagger UI: http://localhost:8080/swagger-ui.html
@@ -32,9 +33,14 @@ docker compose -f docker/docker-compose.yml up -d
 
 Default / dev profile (no `SPRING_PROFILES_ACTIVE`, or anything other than `prod`):
 
+> **`JWT_SECRET` has no fallback outside the `dev` profile.** A missing value fails
+> startup rather than silently signing tokens with a key committed to this repository,
+> which anyone could use to forge a token for any agency and role. Run locally with
+> `SPRING_PROFILES_ACTIVE=dev`, or export `JWT_SECRET` yourself.
+
 | Variable | Default (dev) | Description |
 |----------|---------------|-------------|
-| `JWT_SECRET` | `beduno-dev-secret-key-...` | HS256 signing key (min 256 bits) |
+| `JWT_SECRET` | `beduno-dev-secret-key-...` (**`dev` profile only**) | HS256 signing key (min 256 bits) |
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/beduno` | JDBC URL |
 | `SPRING_DATASOURCE_USERNAME` | `beduno` | DB username |
 | `SPRING_DATASOURCE_PASSWORD` | `beduno` | DB password |
@@ -50,6 +56,7 @@ above are **not read under this profile** — using them will fail to start.
 | `DATABASE_URL` | JDBC URL |
 | `DATABASE_USERNAME` | DB username |
 | `DATABASE_PASSWORD` | DB password |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origin allowlist. Empty (the default) registers no CORS mapping at all |
 
 ---
 
@@ -211,11 +218,13 @@ violation with `overrideReason` to force the operation.
 
 ## CORS
 
-`WebConfig` maps `/api/**` with `allowedOriginPatterns("*")` **and**
-`allowCredentials(true)` — i.e. any origin is allowed to make credentialed
-requests. This is wide open and should be replaced with an explicit origin
-allowlist before a production deployment. `/actuator/**` and `/v3/api-docs` are
-not covered by this CORS mapping.
+`WebConfig` maps `/api/**` against an explicit origin allowlist bound to
+`beduno.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`, comma-separated). It
+defaults to `http://localhost:3000,http://localhost:5173` for local development.
+
+**An empty list registers no CORS mapping at all**, so a deployment that sets no
+origins rejects every cross-origin request instead of falling back to something
+permissive. `/actuator/**` and `/v3/api-docs` are not covered by this mapping.
 
 ---
 

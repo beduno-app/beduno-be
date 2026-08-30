@@ -34,6 +34,10 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("spring.flyway.enabled", () -> "true");
+        // application.yml intentionally has no fallback for the signing key, so that a deployment
+        // which forgets JWT_SECRET fails to start instead of signing tokens with a key published
+        // in this repository. Tests therefore have to supply their own.
+        registry.add("beduno.jwt.secret", () -> "test-secret-key-that-is-at-least-256-bits-long-for-hs256");
     }
 
     @Autowired

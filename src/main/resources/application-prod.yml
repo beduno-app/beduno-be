@@ -5,8 +5,32 @@ spring:
     password: ${DATABASE_PASSWORD}
   jpa:
     show-sql: false
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
 
 logging:
   level:
     com.beduno: INFO
     org.springframework.security: WARN
+
+server:
+  # native = Tomcat RemoteIpValve. It walks X-Forwarded-For right-to-left, skipping
+  # trusted proxies (its default internalProxies regex covers 10/8, 172.16/12, 192.168/16,
+  # so the Caddy container on the docker bridge is trusted), and sets remoteAddr to the
+  # first untrusted hop. That makes getRemoteAddr() the real client rather than a value
+  # the caller can spoof, and sets the https scheme so HSTS is actually emitted.
+  forward-headers-strategy: native
+  shutdown: graceful
+
+beduno:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+  security:
+    public-api-docs: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
