@@ -1,0 +1,20 @@
+# SITE_ADDRESS is the DuckDNS hostname. Naming it here (rather than using :443) is what lets
+# Caddy obtain and renew a Let's Encrypt certificate automatically over HTTP-01.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Caddy appends the real peer address to X-Forwarded-For and sets X-Forwarded-Proto.
+	# Tomcat's RemoteIpValve (server.forward-headers-strategy: native) trusts Caddy because its
+	# container address is inside the docker bridge range, and resolves the client address from
+	# the right. That is what makes the login throttle unspoofable and HSTS actually emit.
+	reverse_proxy app:8080 {
+		health_uri /actuator/health
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
