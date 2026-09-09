@@ -9,14 +9,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 /**
- * The throttle used to key its buckets on the left-most {@code X-Forwarded-For} entry. Every hop
- * appends to that header, so its left-most value is whatever the caller sent: a brute-force script
- * could vary it per request and never exhaust a bucket. These tests pin the fix.
+ * Two fixes are pinned here. The throttle used to key its buckets on the left-most
+ * {@code X-Forwarded-For} entry -- every hop appends to that header, so its left-most value is
+ * whatever the caller sent, and a brute-force script could vary it per request and never exhaust a
+ * bucket. It also never removed a bucket, so the keyspace was the internet.
  */
 class RateLimitFilterTest {
 
@@ -30,7 +33,7 @@ class RateLimitFilterTest {
         // ErrorResponse carries an Instant, which a bare ObjectMapper cannot serialize.
         // Spring Boot's autoconfigured mapper registers this module; the throttle's 429
         // branch writes through it, so the test mapper needs it too.
-        filter = new RateLimitFilter(new ObjectMapper().registerModule(new JavaTimeModule()));
+        filter = new RateLimitFilter(new ObjectMapper().registerModule(new JavaTimeModule()), LIMIT);
     }
 
     private MockHttpServletRequest request(String remoteAddr, String forwardedFor) {
@@ -94,6 +97,58 @@ class RateLimitFilterTest {
             assertThat(statusAfter(request("203.0.113.7", null))).isEqualTo(429);
             // A genuinely different client is unaffected by the first one's exhausted bucket.
             assertThat(statusAfter(request("203.0.113.8", null))).isEqualTo(200);
+        }
+    }
+
+    @Nested
+    class BucketEviction {
+
+        @Test
+        void shouldForgetBucket_whenClientHasBeenIdlePastTheTtl() throws Exception {
+            statusAfter(request("203.0.113.7", null));
+            assertThat(filter.trackedClients()).isEqualTo(1);
+
+            // Nothing has aged yet, so a sweep now must not throw the live bucket away.
+            filter.sweepIdleBuckets();
+            assertThat(filter.trackedClients()).isEqualTo(1);
+
+            ageAllBucketsBy(Duration.ofMinutes(11));
+            filter.sweepIdleBuckets();
+            assertThat(filter.trackedClients()).isZero();
+        }
+
+        @Test
+        void shouldNotGrowUnbounded_whenManyDistinctClientsCallOnce() throws Exception {
+            for (var i = 0; i < 500; i++) {
+                statusAfter(request("198.51.100." + (i % 256) + "." + i, null));
+            }
+            assertThat(filter.trackedClients()).isEqualTo(500);
+
+            ageAllBucketsBy(Duration.ofMinutes(11));
+            filter.sweepIdleBuckets();
+            assertThat(filter.trackedClients()).isZero();
+        }
+
+        @Test
+        void shouldKeepThrottling_whenBucketSurvivesASweep() throws Exception {
+            for (var i = 0; i < LIMIT; i++) {
+                assertThat(statusAfter(request("203.0.113.7", null))).isEqualTo(200);
+            }
+            filter.sweepIdleBuckets();
+            // The client is still active, so its exhausted bucket must not be reset by the sweep.
+            assertThat(statusAfter(request("203.0.113.7", null))).isEqualTo(429);
+        }
+
+        /** Reaches into the entries rather than sleeping ten minutes. */
+        private void ageAllBucketsBy(Duration age) throws Exception {
+            var bucketsField = RateLimitFilter.class.getDeclaredField("buckets");
+            bucketsField.setAccessible(true);
+            var buckets = (java.util.Map<?, ?>) bucketsField.get(filter);
+            for (var entry : buckets.values()) {
+                var lastSeen = entry.getClass().getDeclaredField("lastSeenMillis");
+                lastSeen.setAccessible(true);
+                lastSeen.setLong(entry, System.currentTimeMillis() - age.toMillis());
+            }
         }
     }
 }
