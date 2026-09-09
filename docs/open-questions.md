@@ -261,6 +261,15 @@ returned by no endpoint. `StayService.toStringMap` returns its argument unchange
 **Q27 — `Agency.status` and `User.status` are raw `String`s** while every other
 status field in the domain is an `@Enumerated` enum.
 
+**Q28 — Email is matched case-sensitively everywhere.**
+`UserRepository.findByEmail` is an exact match and `uq_users_email` (V8) is a
+case-sensitive unique index, so `Anna@agency.pl` and `anna@agency.pl` are two
+different accounts and a user who capitalises their address at login is simply not
+found. Nothing normalises case on the way in either — `BootstrapRunner` trims but
+does not fold. Fixing it means lowercasing on write and on lookup, or a functional
+unique index on `lower(email)`; until then the deployment runbook says to create
+accounts in lowercase.
+
 ---
 
 ## 4. Specified but never built
