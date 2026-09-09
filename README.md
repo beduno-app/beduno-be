@@ -58,6 +58,21 @@ above are **not read under this profile** — using them will fail to start.
 | `DATABASE_PASSWORD` | DB password |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origin allowlist. Empty (the default) registers no CORS mapping at all |
 
+Read under every profile, and only relevant on a database with no users yet — see
+[Deployment](#deployment):
+
+| Variable | Description |
+|----------|-------------|
+| `BOOTSTRAP_ENABLED` | `true` to create the first agency and administrator at startup. Default `false` |
+| `BOOTSTRAP_AGENCY_NAME` | Agency display name |
+| `BOOTSTRAP_ADMIN_EMAIL` | Login address for the first `AGENCY_ADMIN` (lowercase — matching is case-sensitive) |
+| `BOOTSTRAP_ADMIN_PASSWORD` | At least 12 characters |
+| `BOOTSTRAP_ADMIN_FIRST_NAME` / `_LAST_NAME` | Default `Agency` / `Admin` |
+| `BOOTSTRAP_ADMIN_LANGUAGE` | Default `PL` |
+
+Enabled with any of the first three missing, or a password under 12 characters, **fails
+startup** — the alternative is an API that answers 401 to everything with no explanation.
+
 ---
 
 ## Build & Test
@@ -88,6 +103,114 @@ docker run -p 8080:8080 \
   -e DATABASE_PASSWORD=<password> \
   beduno-be:latest
 ```
+
+---
+
+## Deployment
+
+Production is **one `t4g.small` in `eu-central-1`** running the app, PostgreSQL and Caddy under
+docker compose, stopped whenever it is not in use. Caddy is the only service publishing ports and
+terminates TLS with an automatically renewed Let's Encrypt certificate; the app and the database
+are reachable on the internal network only. Everything lives in `deploy/`.
+
+| Piece | What |
+|-------|------|
+| Compute | one EC2 `t4g.small` (arm64, 2 GB), tagged `Name=beduno-api` |
+| Image | ECR `beduno-api`, tagged with the commit sha it was built from |
+| Config & secrets | SSM Parameter Store under `/beduno/prod/` |
+| DNS + TLS | DuckDNS hostname, Caddy with Let's Encrypt (HTTP-01) |
+| Shell | SSM Session Manager — there is no port 22 and no key pair |
+| Backups | EBS snapshots of the root volume (`deploy/backup.sh`) |
+
+The researched alternative (ECS Express Mode + RDS) costs roughly $55–60/month against roughly
+$2.60 here at a couple of hours a day. See `context/foundation/infrastructure.md` and the
+addendum recording why the shape changed.
+
+### Parameters
+
+Required before the first launch — `deploy/launch.sh` refuses to run without all five:
+
+| Parameter | Type | Value |
+|-----------|------|-------|
+| `/beduno/prod/DUCKDNS_DOMAIN` | String | subdomain label only, e.g. `beduno-api` (`boot.sh` appends `.duckdns.org`) |
+| `/beduno/prod/DUCKDNS_TOKEN` | SecureString | the token shown on duckdns.org |
+| `/beduno/prod/POSTGRES_PASSWORD` | SecureString | database password |
+| `/beduno/prod/JWT_SECRET` | SecureString | HS256 signing key, at least 256 bits |
+| `/beduno/prod/APP_IMAGE` | String | full ECR image URI including tag (`publish.sh` maintains this) |
+
+Optional, and only until the first login — these create the first agency and administrator,
+because there is no user-management API and the migrations seed no rows:
+
+| Parameter | Type | Value |
+|-----------|------|-------|
+| `/beduno/prod/BOOTSTRAP_ENABLED` | String | `true` |
+| `/beduno/prod/BOOTSTRAP_AGENCY_NAME` | String | agency display name |
+| `/beduno/prod/BOOTSTRAP_ADMIN_EMAIL` | String | login address — **lowercase**, matching is case-sensitive (Q28) |
+| `/beduno/prod/BOOTSTRAP_ADMIN_PASSWORD` | SecureString | at least 12 characters |
+
+The runner creates them only when the users table is empty and does nothing on every later start.
+Enabled but incomplete **fails startup** rather than booting into an API nobody can log into.
+
+### First launch
+
+```bash
+aws ssm put-parameter --name /beduno/prod/DUCKDNS_DOMAIN --type String       --value 'beduno-api'
+aws ssm put-parameter --name /beduno/prod/DUCKDNS_TOKEN  --type SecureString --value '<token>'
+# ...and the rest of the table above
+
+deploy/publish.sh          # build arm64, push to ECR, point APP_IMAGE at it
+deploy/launch.sh           # create the instance (refuses if one already exists)
+deploy/instance.sh status  # state, address, health
+```
+
+`launch.sh` uses the existing security group and subnet by default; override with `SG_ID`,
+`SUBNET_ID`, `INSTANCE_TYPE` or `VOLUME_GB`. Cloud-init then installs Docker, writes the deploy
+files, and starts `beduno.service` — a few minutes, most of it the Let's Encrypt challenge.
+
+Then log in, and **delete the four bootstrap parameters** and restart the service. They are a
+standing copy of an administrator password, re-read at every boot.
+
+```bash
+curl -s -X POST https://<domain>.duckdns.org/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@agency.pl","password":"..."}'
+
+for p in ENABLED AGENCY_NAME ADMIN_EMAIL ADMIN_PASSWORD; do
+  aws ssm delete-parameter --name "/beduno/prod/BOOTSTRAP_$p"
+done
+deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
+```
+
+### Day to day
+
+```bash
+deploy/publish.sh            # deploy the current commit end to end
+deploy/instance.sh start     # start, and wait for the API to answer
+deploy/instance.sh stop      # snapshot the volume, then stop (this is the cost control)
+deploy/instance.sh logs app 200
+deploy/instance.sh shell
+deploy/backup.sh snapshot | list | prune | enable-daily
+```
+
+A stop invalidates two things and `boot.sh` refreshes both on the way back up: the public IPv4
+address (there is no Elastic IP — an idle one costs more than the disk) and the ECR authorization
+token, which lasts 12 hours. That is why **starting the instance is the whole deploy** after the
+first time.
+
+### Rollback
+
+Point `APP_IMAGE` at the previous tag and restart the service:
+
+```bash
+aws ssm put-parameter --name /beduno/prod/APP_IMAGE --type String --overwrite \
+  --value '<account>.dkr.ecr.eu-central-1.amazonaws.com/beduno-api:<previous-sha>'
+deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
+```
+
+**This reverts the image, not the schema.** Flyway migrations that have run stay run, and
+`ddl-auto: validate` will refuse to start older code against a newer schema — a loud failure
+rather than silent corruption, but an outage either way. Keep migrations additive: add columns
+nullable, and never drop or rename one in the same release that stops using it.
 
 ---
 
