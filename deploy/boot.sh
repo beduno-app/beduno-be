@@ -17,12 +17,27 @@ param() {
     --region "$REGION" --query Parameter.Value --output text
 }
 
+# Empty rather than fatal when the parameter is absent. Used for the bootstrap credentials, which
+# exist only between the first launch and the first successful login.
+param_optional() {
+  aws ssm get-parameter --name "$1" --with-decryption \
+    --region "$REGION" --query Parameter.Value --output text 2>/dev/null || true
+}
+
 log "fetching configuration from SSM Parameter Store"
 DUCKDNS_DOMAIN="$(param /beduno/prod/DUCKDNS_DOMAIN)"
 DUCKDNS_TOKEN="$(param /beduno/prod/DUCKDNS_TOKEN)"
 POSTGRES_PASSWORD="$(param /beduno/prod/POSTGRES_PASSWORD)"
 JWT_SECRET="$(param /beduno/prod/JWT_SECRET)"
 APP_IMAGE="$(param /beduno/prod/APP_IMAGE)"
+
+# There is no user-management API, so the first agency and administrator are created at startup
+# from these. Store them before the first launch, then delete them once you have logged in --
+# they are a standing copy of an administrator password, re-read at every boot.
+BOOTSTRAP_ENABLED="$(param_optional /beduno/prod/BOOTSTRAP_ENABLED)"
+BOOTSTRAP_AGENCY_NAME="$(param_optional /beduno/prod/BOOTSTRAP_AGENCY_NAME)"
+BOOTSTRAP_ADMIN_EMAIL="$(param_optional /beduno/prod/BOOTSTRAP_ADMIN_EMAIL)"
+BOOTSTRAP_ADMIN_PASSWORD="$(param_optional /beduno/prod/BOOTSTRAP_ADMIN_PASSWORD)"
 
 # Point the hostname at whatever address this boot was given. An empty ip= makes DuckDNS use the
 # requesting address, so this works without the instance having to discover its own public IP.
@@ -44,6 +59,10 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
 SITE_ADDRESS=${DUCKDNS_DOMAIN}.duckdns.org
 CORS_ALLOWED_ORIGINS=
+BOOTSTRAP_ENABLED=${BOOTSTRAP_ENABLED:-false}
+BOOTSTRAP_AGENCY_NAME=${BOOTSTRAP_AGENCY_NAME}
+BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL}
+BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD}
 EOF
 
 log "authenticating to ECR"
