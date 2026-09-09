@@ -51,7 +51,12 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler)
                 )
                 .authorizeHttpRequests(auth -> {
-                    auth.requestMatchers("/api/v1/auth/**").permitAll();
+                    // Only the two endpoints that mint tokens are anonymous. /auth/me was
+                    // covered by an /auth/** wildcard, so an unauthenticated call reached the
+                    // controller with a null principal and died in the catch-all handler as a
+                    // 500; it now falls through to anyRequest() and answers 401 like everything
+                    // else behind the entry point.
+                    auth.requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll();
                     auth.requestMatchers("/actuator/health").permitAll();
                     // Anonymous access to the API specification is a deployment choice, not a
                     // constant: it is convenient locally and hands an attacker a map in production.

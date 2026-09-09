@@ -38,7 +38,8 @@ public class AuthService {
     }
 
     public AuthResponse refresh(RefreshRequest request) {
-        if (!jwtTokenProvider.validateToken(request.refreshToken())) {
+        if (!jwtTokenProvider.validateToken(request.refreshToken())
+                || !jwtTokenProvider.isRefreshToken(request.refreshToken())) {
             throw new UnauthorizedException("error.auth.invalid_refresh_token");
         }
 

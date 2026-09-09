@@ -32,7 +32,12 @@ public class TenantFilter extends OncePerRequestFilter {
         MDC.put("requestId", requestId);
         try {
             var token = extractToken(request);
-            if (token != null && jwtTokenProvider.validateToken(token)) {
+            // The refresh check is the other half of the rule enforced in AuthService: the two
+            // token kinds are not interchangeable in either direction. It also keeps the claim
+            // reads below safe — a refresh token carries no agencyId, and UUID.fromString(null)
+            // inside a filter surfaces as a 500 rather than the 401 this case deserves.
+            if (token != null && jwtTokenProvider.validateToken(token)
+                    && !jwtTokenProvider.isRefreshToken(token)) {
                 var claims = jwtTokenProvider.parseToken(token);
 
                 var userId = UUID.fromString(claims.getSubject());

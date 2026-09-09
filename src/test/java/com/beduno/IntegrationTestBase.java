@@ -38,6 +38,10 @@ public abstract class IntegrationTestBase {
         // which forgets JWT_SECRET fails to start instead of signing tokens with a key published
         // in this repository. Tests therefore have to supply their own.
         registry.add("beduno.jwt.secret", () -> "test-secret-key-that-is-at-least-256-bits-long-for-hs256");
+        // Every integration test shares one context, so they also share the throttle's buckets and
+        // the loopback address they all call from. At the production limit of 10/min the auth
+        // tests would start throttling each other; the throttle has its own unit test.
+        registry.add("beduno.rate-limit.requests-per-minute", () -> "10000");
     }
 
     @Autowired
@@ -54,6 +58,14 @@ public abstract class IntegrationTestBase {
     }
 
     protected HttpHeaders authHeaders(Role role, UUID agencyId, UUID[] propertyIds) {
+        var token = jwtTokenProvider.generateAccessToken(testUser(role, agencyId, propertyIds));
+        var headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        return headers;
+    }
+
+    /** An unsaved User carrying just enough state for the token provider. */
+    protected User testUser(Role role, UUID agencyId, UUID[] propertyIds) {
         var user = new User();
         try {
             var idField = com.beduno.common.model.BaseEntity.class.getDeclaredField("id");
@@ -66,11 +78,7 @@ public abstract class IntegrationTestBase {
         user.setRole(role);
         user.setLanguage("EN");
         user.setAssignedPropertyIds(propertyIds);
-
-        var token = jwtTokenProvider.generateAccessToken(user);
-        var headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        return headers;
+        return user;
     }
 
     protected HttpHeaders authHeaders(Role role) {
