@@ -24,7 +24,7 @@ defect fixes applied. Each is reversible; none is load-bearing.
 | # | Decision | Rationale | Drift risk if wrong |
 |---|----------|-----------|---------------------|
 | D1 | Docs follow code, divergences recorded here rather than erased | The docs were a pre-build design pass, not a ratified spec; making code follow them would have meant building a large amount of unreviewed scope | Low — nothing was deleted, only relocated |
-| D2 | No-show reason stored in a new `stays.no_show_reason` column (V7) rather than appended to `notes` or left audit-only | The old code overwrote `notes`, destroying operator data. A dedicated column preserves both and keeps the reason visible on `StayResponse` | The design doc called this `reason_tag`. The column is new and unreleased, so rename it now if you prefer that name — after a deploy it costs a migration |
+| D2 | No-show reason stored in a new `stays.no_show_reason` column (V7) rather than appended to `notes` or left audit-only | The old code overwrote `notes`, destroying operator data. A dedicated column preserves both and keeps the reason visible on `StayResponse` | **Ratified 2026-09-09: the column keeps the name `no_show_reason`.** `reason_tag` reads as a generic slot, and Q12 wants reason tags on check-in, check-out and move too — one column called `reason_tag` could not hold them. The request field was the inconsistent half (`reasonTag` in, `noShowReason` out) and was renamed to match, which cost nothing while no client exists |
 | D3 | Property/room `DELETE` guarded with 409 instead of converting to soft delete | Explicitly chosen: no migration, and it matches the user-visible contract the docs already promised | See Q7 — the guard blocks on *any* referencing stay, so a property with history becomes permanently undeletable. Soft delete is the real answer |
 | D4 | `error.property.has_stays` kept even though it is currently unreachable | A stay requires a room, and the rooms guard fires first, so the stays branch cannot trigger today. Kept as defence-in-depth against future paths | None; it is dead but harmless. Delete it if you dislike unreachable branches |
 | D5 | A refresh token whose subject no longer exists returns 401, not 404 | Returning 404 would let an unauthenticated caller probe whether an account was deleted | None |
@@ -32,15 +32,18 @@ defect fixes applied. Each is reversible; none is load-bearing.
 | D7 | New i18n values written as raw UTF-8, not `\uXXXX` escapes | `spring.messages.encoding: UTF-8` is set explicitly, and hand-escaping Cyrillic is error-prone | None functionally; the bundles now mix both styles |
 | D8 | Property scoping and override permissions documented as-is rather than enforced | Explicitly chosen: document now, ticket the fix. See section 2 | The docs no longer over-promise, but the gap is real and unmitigated |
 | D9 | `messages_ua.properties` renamed to `messages_uk.properties` | `ExportService` resolves `Locale("uk")` and `WebConfig` registers `uk`, so the `_ua` file was never loaded and Ukrainian silently served English. `uk` is the ISO 639-1 code | None — the public API parameter is still `UA`. Had the previous commit shipped alone, the UA translations would have been dead weight |
-| D10 | `NoShowRequest.reasonTag` bounded with `@Size(max = 100)` | D2 moved the reason from `notes` (unbounded TEXT) to `VARCHAR(100)`, which would have turned a long tag into a 500. This closes a hole D2 opened | None |
+| D10 | `NoShowRequest.noShowReason` bounded with `@Size(max = 100)` | D2 moved the reason from `notes` (unbounded TEXT) to `VARCHAR(100)`, which would have turned a long tag into a 500. This closes a hole D2 opened | None |
 | D11 | Two `@Operation` descriptions corrected in code | They are published in the OpenAPI document, so they are user-facing docs: property delete claimed a soft delete, and the exports claimed EN/PL only | None |
+| D12 | S5 closed by making `users.email` globally unique (V8), not by scoping login to an agency | Scoping login needs an agency identifier in the login call that no client sends and no endpoint exposes. Global uniqueness keeps the contract at email plus password | One person cannot hold accounts at two agencies. `uq_users_email_agency` was left in place, so dropping `uq_users_email` is the whole revert |
+| D13 | First agency and admin created by an env-gated startup bootstrapper, not by a seed migration | A migration runs once ever: if the variables were absent on first boot the chance is gone, and the credentials would have to sit in a committed file. The bootstrapper is idempotent and re-runnable | The variables are read at every startup; leaving them set in the environment is a standing credential. Documented in the deployment runbook |
 
 ---
 
-## 2. Security gaps — documented, not fixed
+## 2. Security gaps
 
-Ticketed deliberately. The docs previously claimed these protections existed; they
-now describe reality instead. **The underlying exposure is unchanged.**
+Originally all documented-but-unfixed. **S3, S4, S5, S7 and S8 were closed before the
+first deployment** — the items below are marked individually. S1, S2 and S6 remain
+open and are unmitigated.
 
 ### S1 — Per-property scoping is barely enforced (highest priority)
 
@@ -69,40 +72,44 @@ Fixing this needs new tests: today no test asserts that a scoped user is refused
 that can reach the endpoint can override a soft violation, including `FRONT_DESK`.
 The design intended Admin + Property Admin only.
 
-### S3 — CORS is wide open with credentials
+### S3 — CORS is wide open with credentials — **FIXED**
 
-`WebConfig.addCorsMappings` sets `allowedOriginPatterns("*")` together with
-`allowCredentials(true)` on `/api/**`. Should be an env-driven allowlist before any
-public deployment.
+`WebConfig.addCorsMappings` set `allowedOriginPatterns("*")` together with
+`allowCredentials(true)` on `/api/**`. It is now an allowlist bound to
+`CORS_ALLOWED_ORIGINS`; an empty list registers no mapping at all, so an
+unconfigured deployment rejects cross-origin requests rather than allowing every
+one of them.
 
-### S4 — Rate-limit bucket map grows without bound
+### S4 — Rate-limit bucket map grows without bound — **FIXED**
 
-`RateLimitFilter.buckets` is a `ConcurrentHashMap` keyed by client IP that is never
-evicted. Unbounded memory growth under sustained traffic from many source addresses.
+`RateLimitFilter.buckets` was a `ConcurrentHashMap` keyed by client IP that was never
+evicted — unbounded memory growth under sustained traffic from many source addresses.
+A scheduled sweep now drops buckets idle past ten minutes, with a fail-open cap as a
+backstop between sweeps.
 
-### S5 — Login is not tenant-scoped
+### S5 — Login is not tenant-scoped — **FIXED**
 
-`UserRepository.findByEmail` has no `agencyId` filter, but `users` is
-`UNIQUE (agency_id, email)` — the same address can legitimately exist in two
-agencies, and login would resolve non-deterministically. Either scope login by
-agency or make email globally unique.
+`UserRepository.findByEmail` has no `agencyId` filter, and `users` was only
+`UNIQUE (agency_id, email)` — the same address could legitimately exist in two
+agencies, and login resolved non-deterministically. V8 makes the address globally
+unique; see D12 for why that rather than scoping login by agency.
 
-### S7 — `/auth/refresh` accepts an access token as a refresh token
+### S7 — `/auth/refresh` accepts an access token as a refresh token — **FIXED**
 
-`AuthService.refresh` calls `validateToken` and `getUserId` but never checks the
-`type` claim. `JwtTokenProvider` stamps refresh tokens with `type: "refresh"`, and
-nothing verifies it — so any valid access token can be exchanged for a fresh 7-day
-refresh token. Access tokens are the more widely exposed of the two, which makes
-this a privilege-lifetime escalation. One-line fix; left alone only because it was
-outside the approved scope for this pass.
+`AuthService.refresh` called `validateToken` and `getUserId` but never checked the
+`type` claim, so any valid access token could be exchanged for a fresh 7-day refresh
+token — a privilege-lifetime escalation on the more widely exposed of the two tokens.
+Both directions are now checked: `AuthService.refresh` requires `type: "refresh"`,
+and `TenantFilter` refuses a refresh token presented as a bearer credential (which
+also removes a 500, since a refresh token carries no `agencyId` claim).
 
-### S8 — `GET /auth/me` returns 500 when called anonymously
+### S8 — `GET /auth/me` returns 500 when called anonymously — **FIXED**
 
-`SecurityConfig` permits `/api/v1/auth/**` wholesale, so an unauthenticated call
-reaches `AuthController.me`, where the `@AuthenticationPrincipal` is null and
-`currentUser.userId()` throws. The catch-all handler turns it into a 500. It should
-require authentication and return 401 like every other protected endpoint. Note the
-new `RestAuthenticationEntryPoint` cannot help here — the request never reaches it.
+`SecurityConfig` permitted `/api/v1/auth/**` wholesale, so an unauthenticated call
+reached `AuthController.me` with a null `@AuthenticationPrincipal` and died in the
+catch-all handler as a 500. Only `/auth/login` and `/auth/refresh` are anonymous now;
+`/me` falls through to `anyRequest().authenticated()` and answers 401 through
+`RestAuthenticationEntryPoint` like every other protected endpoint.
 
 ### S6 — No row-level security
 

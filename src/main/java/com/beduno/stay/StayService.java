@@ -164,10 +164,10 @@ public class StayService {
         }
         var previous = snapshot(stay);
         stay.setStatus(StayStatus.NO_SHOW);
-        stay.setNoShowReason(request.reasonTag());
+        stay.setNoShowReason(request.noShowReason());
         stay = stayRepository.save(stay);
         auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
-                AuditAction.NO_SHOW, previous, snapshot(stay), request.reasonTag());
+                AuditAction.NO_SHOW, previous, snapshot(stay), request.noShowReason());
         return stayMapper.toResponse(stay);
     }
 

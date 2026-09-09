@@ -927,9 +927,9 @@ The constraint engine always runs (against the effective room), excluding this s
 
 **Request:**
 ```json
-{ "reasonTag": "NO_CONTACT" }
+{ "noShowReason": "NO_CONTACT" }
 ```
-`reasonTag` is a **`@NotBlank` free-form string** — there is no enum and no server-side vocabulary. It is stored in the dedicated `stays.no_show_reason` column (`VARCHAR(100)`) and copied to the audit event's `reason`. It **no longer overwrites `notes`**; any operational note on the stay survives.
+`noShowReason` is a **`@NotBlank` free-form string** — there is no enum and no server-side vocabulary. It is stored in the dedicated `stays.no_show_reason` column (`VARCHAR(100)`) and copied to the audit event's `reason`. It **no longer overwrites `notes`**; any operational note on the stay survives.
 
 There is no `notes` field on this request.
 
@@ -937,9 +937,7 @@ There is no `notes` field on this request.
 
 **Response 409:** `error.stay.invalid_status_transition` — only from `EXPECTED_TODAY`
 
-**Response 400:** blank `reasonTag`
-
-> **Caveat.** A `reasonTag` longer than 100 characters is not rejected by validation and fails at the database as a 500.
+**Response 400:** blank `noShowReason`, or longer than 100 characters (`@Size` matches the column width, so an over-long value is rejected at validation rather than at the database)
 
 ---
 
@@ -952,7 +950,7 @@ There is no `notes` field on this request.
 ```json
 { "actualDateTo": "2026-04-30" }
 ```
-`actualDateTo` is optional. When present it **overwrites** `dateTo` — earlier or later, no validation either way. When absent `dateTo` is left as planned (including `null` for an open-ended stay). There is no `reasonTag` and no `notes` on this request.
+`actualDateTo` is optional. When present it **overwrites** `dateTo` — earlier or later, no validation either way. When absent `dateTo` is left as planned (including `null` for an open-ended stay). There is no reason field and no `notes` on this request.
 
 The constraint engine does not run.
 
@@ -969,7 +967,7 @@ The constraint engine does not run.
 ```json
 { "stayIds": ["uuid-1", "uuid-2", "uuid-3"] }
 ```
-`stayIds` is `@NotEmpty`. There is no `reasonTag` and no `actualDateTo` — dates are left exactly as planned.
+`stayIds` is `@NotEmpty`. There is no reason field and no `actualDateTo` — dates are left exactly as planned.
 
 **Response 200:**
 ```json
@@ -997,7 +995,7 @@ Move a checked-in worker to another room **in the same property**.
   "overrideReason": "Maintenance in the old room"
 }
 ```
-`targetRoomId` is `@NotNull`. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no `reasonTag` and no `notes` — **cross-property moves are not supported**.
+`targetRoomId` is `@NotNull`. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no reason field and no `notes` — **cross-property moves are not supported**.
 
 Mechanics:
 1. The current stay is set to `CHECKED_OUT` (its `dateFrom`/`dateTo` are left untouched)
@@ -1217,7 +1215,7 @@ Query the immutable audit trail. Always scoped to the caller's agency.
   - **WORKER:** `status`, `internalId`, `firstName`, `lastName`, `gender`
   - **ROOM:** `name`, `status`, `capacity`, `blockedSpots`, `genderRule`
   - **PROPERTY:** `name`, `status`, and `city` when set
-- `reason` is populated only from: stay update / check-in / move `overrideReason`, no-show `reasonTag`, and the literal `"bulk_import"` on workers created by CSV import. It is `null` everywhere else. There is no separate `notes` or `reasonTag` field.
+- `reason` is populated only from: stay update / check-in / move `overrideReason`, no-show `noShowReason`, and the literal `"bulk_import"` on workers created by CSV import. It is `null` everywhere else. There is no separate `notes` or reason-tag field.
 
 ---
 
@@ -1267,9 +1265,9 @@ Everything below appeared in the original specification and **is not built**. Th
 
 The original specification defined a fourteen-value predefined tag vocabulary (`ON_TIME`, `ARRIVED_LATE`, `DOCS_MISSING`, `NO_CONTACT`, `TRANSPORT_DELAY`, `PLANNED_DEPARTURE`, `PROJECT_ENDED`, `EARLY_DEPARTURE`, `ROOM_CONFLICT`, `MAINTENANCE`, `CAPACITY_ISSUE`, `WORKER_REQUEST`, `MANAGER_DECISION`, `OTHER`) shared across check-in, check-out, move, stay and room-block operations.
 
-**Not built.** There is no reason-tag enum, constant set or validation anywhere in the codebase, and no endpoint accepts a `reasonTag` except one:
+**Not built.** There is no reason-tag enum, constant set or validation anywhere in the codebase, and no endpoint accepts a reason tag except one:
 
-- `POST /stays/{id}/no-show` takes `reasonTag` as a **free-form `@NotBlank` String** (max 100 chars at the database level). Any text is accepted.
+- `POST /stays/{id}/no-show` takes `noShowReason` as a **free-form `@NotBlank` String** (max 100 chars, matching the column). Any text is accepted.
 
 Check-in, check-out, bulk-checkout, move and cancel accept **no** reason tag at all. Check-in and move take a free-form `overrideReason` instead, which serves a different purpose (suppressing soft constraint violations).
 

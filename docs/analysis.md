@@ -230,7 +230,7 @@ All routes are prefixed `/api/v1`. `/api/v1/auth/**`, `/actuator/health` and the
 ### Arrivals Workflow
 - `GET /stays/arrivals?propertyId=&date=` - stays in `EXPECTED_TODAY` with `dateFrom = date`
 - `POST /stays/{id}/check-in` - confirm arrival; body `{roomId?, overrideReason?}`
-- `POST /stays/{id}/no-show` - mark no-show; body `{reasonTag}` (required), stored in `stays.no_show_reason`
+- `POST /stays/{id}/no-show` - mark no-show; body `{noShowReason}` (required), stored in `stays.no_show_reason`
 - `POST /stays/{id}/check-out` - body `{actualDateTo?}`
 - `POST /stays/{id}/move` - body `{targetRoomId, overrideReason?}`; checks the old stay out and returns the new one
 
