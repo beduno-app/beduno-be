@@ -1,5 +1,6 @@
 package com.beduno.room;
 
+import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
@@ -28,6 +29,19 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RoomService {
 
+    /**
+     * Rooms come from a derived query, so these map to entity properties rather than columns.
+     * There is no roomNumber: the field a client sees in the response is name.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "name", "name",
+            "floor", "floor",
+            "capacity", "capacity",
+            "genderRule", "genderRule",
+            "status", "status",
+            "createdAt", "createdAt",
+            "updatedAt", "updatedAt");
+
     private final RoomRepository roomRepository;
     private final RoomMapper roomMapper;
     private final PropertyService propertyService;
@@ -38,7 +52,8 @@ public class RoomService {
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
         propertyService.getPropertyOrThrow(propertyId);
-        var page = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId, pageable);
+        var page = roomRepository.findAllByAgencyIdAndPropertyId(
+                agencyId, propertyId, SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(roomMapper::toResponse));
     }
 

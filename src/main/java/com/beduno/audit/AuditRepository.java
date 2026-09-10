@@ -11,15 +11,20 @@ import java.util.UUID;
 
 public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
 
+    /**
+     * Deliberately unordered. A Pageable's sort is appended as its own {@code order by}, so a
+     * hardcoded one here produced a query with two of them -- a syntax error that made every
+     * request to this endpoint a 500, the default sort included. The order comes from the
+     * controller's @PageableDefault, which asks for createdAt descending.
+     */
     @Query("""
             SELECT e FROM AuditEvent e
             WHERE e.agencyId = :agencyId
-              AND (:entityType IS NULL OR e.entityType = :entityType)
-              AND (:entityId IS NULL OR e.entityId = :entityId)
-              AND (:actorUserId IS NULL OR e.actorUserId = :actorUserId)
-              AND (:dateFrom IS NULL OR e.createdAt >= :dateFrom)
-              AND (:dateTo IS NULL OR e.createdAt <= :dateTo)
-            ORDER BY e.createdAt DESC
+              AND (CAST(:entityType AS STRING) IS NULL OR e.entityType = :entityType)
+              AND (CAST(:entityId AS java.util.UUID) IS NULL OR e.entityId = :entityId)
+              AND (CAST(:actorUserId AS java.util.UUID) IS NULL OR e.actorUserId = :actorUserId)
+              AND (CAST(:dateFrom AS java.time.Instant) IS NULL OR e.createdAt >= :dateFrom)
+              AND (CAST(:dateTo AS java.time.Instant) IS NULL OR e.createdAt <= :dateTo)
             """)
     Page<AuditEvent> findAllWithFilters(
             @Param("agencyId") UUID agencyId,

@@ -1,5 +1,6 @@
 package com.beduno.audit;
 
+import com.beduno.common.model.SortFields;
 import com.beduno.audit.dto.AuditEventResponse;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.TenantContext;
@@ -15,6 +16,16 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AuditService {
+
+    /**
+     * Audit events come from a JPQL query, so these map to entity properties rather than columns.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "createdAt", "createdAt",
+            "entityType", "entityType",
+            "entityId", "entityId",
+            "action", "action",
+            "actorUserId", "actorUserId");
 
     private final AuditRepository auditRepository;
     private final AuditMapper auditMapper;
@@ -41,7 +52,8 @@ public class AuditService {
             Instant dateFrom, Instant dateTo, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
         var page = auditRepository.findAllWithFilters(
-                agencyId, entityType, entityId, actorUserId, dateFrom, dateTo, pageable);
+                agencyId, entityType, entityId, actorUserId, dateFrom, dateTo,
+                SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(auditMapper::toResponse));
     }
 }

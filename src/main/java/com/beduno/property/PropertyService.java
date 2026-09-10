@@ -51,7 +51,7 @@ public class PropertyService {
         var page = propertyRepository.findAllByAgencyIdWithFilters(
                 agencyId,
                 status != null ? status.name() : null,
-                search, SortFields.toColumns(pageable, SORTABLE));
+                search, SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(propertyMapper::toResponse));
     }
 

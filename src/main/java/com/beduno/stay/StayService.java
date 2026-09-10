@@ -75,7 +75,7 @@ public class StayService {
         var page = stayRepository.findAllWithFilters(
                 agencyId, workerId, propertyId,
                 status != null ? status.name() : null,
-                dateFrom, dateTo, SortFields.toColumns(pageable, SORTABLE));
+                dateFrom, dateTo, SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(stayMapper::toResponse));
     }
 

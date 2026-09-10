@@ -60,7 +60,7 @@ public class WorkerService {
     @Transactional(readOnly = true)
     public PageResponse<WorkerResponse> findAll(WorkerStatus status, Gender gender, String tag, String search, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
-        var sorted = SortFields.toColumns(pageable, SORTABLE);
+        var sorted = SortFields.translate(pageable, SORTABLE);
 
         var page = (tag != null)
                 ? workerRepository.findAllByAgencyIdWithFiltersAndTag(
