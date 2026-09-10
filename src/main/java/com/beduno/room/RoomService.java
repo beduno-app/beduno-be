@@ -93,7 +93,9 @@ public class RoomService {
         room = roomRepository.save(room);
         auditService.log(agencyId, currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.CREATED, null, snapshot(room), null);
-        return roomMapper.toResponse(room);
+        // A room that was just created has no stays, but the field must still be an empty list:
+        // the client types occupants as an array and a null is not one.
+        return roomMapper.toResponse(room).withOccupancy(0, List.of());
     }
 
     @Transactional
@@ -113,7 +115,9 @@ public class RoomService {
         room = roomRepository.save(room);
         auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.UPDATED, previous, snapshot(room), null);
-        return roomMapper.toResponse(room);
+        // Unlike create, an existing room can be occupied, so this reads the real occupancy
+        // rather than assuming zero -- editing a room must not blank out who is in it.
+        return withOccupants(room, occupantsByRoom(room.getAgencyId(), propertyId));
     }
 
     @Transactional

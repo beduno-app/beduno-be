@@ -103,6 +103,52 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
                 });
     }
 
+    /**
+     * The spec's own example: capacity 4, blockedSpots 1, currentOccupancy 2 -> availableSpots 1.
+     * The client uses this as its placement gate, so counting only blocked spots showed a full
+     * room as having space and invited a placement the server would then refuse.
+     */
+    @Test
+    void shouldSubtractOccupancyFromAvailableSpots() {
+        var blocked = createRoomWithBlocked("202", 4, 1);
+        assertThat(blocked.availableSpots()).isEqualTo(3);
+
+        room = blocked;
+        checkIn(createWorker("Ewa", "Lis").id());
+        checkIn(createWorker("Ola", "Dab").id());
+
+        var fetched = getRoom();
+        assertThat(fetched.currentOccupancy()).isEqualTo(2);
+        assertThat(fetched.availableSpots()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldNeverReportNegativeAvailableSpots() {
+        var tiny = createRoomWithBlocked("203", 1, 0);
+        room = tiny;
+        checkIn(createWorker("Zof", "Mak").id());
+
+        assertThat(getRoom().availableSpots()).isZero();
+    }
+
+    /** The client types occupants as an array; a null is not one. */
+    @Test
+    void shouldReturnAnEmptyOccupantList_whenTheRoomIsFreshlyCreated() {
+        var created = createRoom("301");
+
+        assertThat(created.occupants()).isNotNull().isEmpty();
+        assertThat(created.currentOccupancy()).isZero();
+    }
+
+    private RoomResponse createRoomWithBlocked(String roomNumber, int capacity, int blockedSpots) {
+        var request = new CreateRoomRequest(roomNumber, 1, capacity, blockedSpots,
+                GenderRule.MIXED, null);
+        return restTemplate.exchange(
+                "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
+                new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
+                RoomResponse.class).getBody();
+    }
+
     private RoomResponse getRoom() {
         return restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms/" + room.id(), HttpMethod.GET,

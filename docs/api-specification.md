@@ -606,8 +606,8 @@ There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` 
 **Request:**
 ```json
 {
-  "name": "12",
-  "floor": "2",
+  "roomNumber": "12",
+  "floor": 2,
   "capacity": 4,
   "blockedSpots": 1,
   "genderRule": "MALE_ONLY",
@@ -640,8 +640,8 @@ Status is always `ACTIVE` on create.
 **Request:**
 ```json
 {
-  "name": "12",
-  "floor": "2",
+  "roomNumber": "12",
+  "floor": 2,
   "capacity": 4,
   "blockedSpots": 0,
   "genderRule": "ANY",
@@ -668,8 +668,8 @@ Setting `status: BLOCKED` makes the constraint engine reject any new or moved st
 {
   "id": "uuid",
   "propertyId": "uuid",
-  "name": "12",
-  "floor": "2",
+  "roomNumber": "12",
+  "floor": 2,
   "capacity": 4,
   "blockedSpots": 1,
   "availableSpots": 3,
@@ -1058,7 +1058,7 @@ Counts only stays with `status = CHECKED_IN` that span the date (`dateFrom <= da
   {
     "roomId": "uuid",
     "roomNumber": "12",
-    "floor": "2",
+    "floor": 2,
     "capacity": 4,
     "blockedSpots": 0,
     "occupiedSpots": 2,
@@ -1139,7 +1139,7 @@ Room-by-room roster to walk the building with.
   {
     "roomId": "uuid",
     "roomNumber": "12",
-    "floor": "2",
+    "floor": 2,
     "expectedOccupants": [
       { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko" }
     ],
