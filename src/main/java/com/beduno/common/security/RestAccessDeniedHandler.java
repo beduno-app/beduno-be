@@ -12,6 +12,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Returns 403 with the standard {@link ErrorResponse} envelope when an
@@ -31,7 +32,10 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
                        HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException {
         response.setStatus(HttpStatus.FORBIDDEN.value());
+        // Explicit: the servlet default is ISO-8859-1 and getWriter() encodes with whatever the
+        // response declares, so without this the header lies and any localized string mojibakes.
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         objectMapper.writeValue(
                 response.getWriter(),
                 ErrorResponse.of("FORBIDDEN", "error.access_denied"));
