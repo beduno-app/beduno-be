@@ -54,7 +54,7 @@ public class StayController {
             @RequestParam(required = false) StayStatus status,
             @RequestParam(required = false) LocalDate dateFrom,
             @RequestParam(required = false) LocalDate dateTo,
-            @PageableDefault(sort = "date_from", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(sort = "dateFrom", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(stayService.findAll(workerId, propertyId, status, dateFrom, dateTo, pageable));
     }
 

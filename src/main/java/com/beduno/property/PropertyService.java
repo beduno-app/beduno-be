@@ -1,5 +1,6 @@
 package com.beduno.property;
 
+import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
@@ -27,6 +28,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PropertyService {
 
+    /**
+     * The fields a client may sort properties by, mapped to the columns the native query orders by.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "name", "name",
+            "address", "address",
+            "city", "city",
+            "status", "status",
+            "createdAt", "created_at",
+            "updatedAt", "updated_at");
+
     private final PropertyRepository propertyRepository;
     private final PropertyMapper propertyMapper;
     private final AuditService auditService;
@@ -39,7 +51,7 @@ public class PropertyService {
         var page = propertyRepository.findAllByAgencyIdWithFilters(
                 agencyId,
                 status != null ? status.name() : null,
-                search, pageable);
+                search, SortFields.toColumns(pageable, SORTABLE));
         return PageResponse.of(page.map(propertyMapper::toResponse));
     }
 

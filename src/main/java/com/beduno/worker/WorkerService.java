@@ -1,5 +1,6 @@
 package com.beduno.worker;
 
+import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
@@ -38,6 +39,20 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WorkerService {
 
+    /**
+     * The fields a client may sort workers by, mapped to the columns the native query orders by.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "firstName", "first_name",
+            "lastName", "last_name",
+            "internalId", "internal_id",
+            "status", "status",
+            "gender", "gender",
+            "nationality", "nationality",
+            "dateOfBirth", "date_of_birth",
+            "createdAt", "created_at",
+            "updatedAt", "updated_at");
+
     private final WorkerRepository workerRepository;
     private final WorkerMapper workerMapper;
     private final AuditService auditService;
@@ -45,18 +60,19 @@ public class WorkerService {
     @Transactional(readOnly = true)
     public PageResponse<WorkerResponse> findAll(WorkerStatus status, Gender gender, String tag, String search, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
+        var sorted = SortFields.toColumns(pageable, SORTABLE);
 
         var page = (tag != null)
                 ? workerRepository.findAllByAgencyIdWithFiltersAndTag(
                         agencyId,
                         status != null ? status.name() : null,
                         gender != null ? gender.name() : null,
-                        search, tag, pageable)
+                        search, tag, sorted)
                 : workerRepository.findAllByAgencyIdWithFilters(
                         agencyId,
                         status != null ? status.name() : null,
                         gender != null ? gender.name() : null,
-                        search, pageable);
+                        search, sorted);
 
         return PageResponse.of(page.map(workerMapper::toResponse));
     }

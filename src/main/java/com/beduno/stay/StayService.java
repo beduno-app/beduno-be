@@ -1,5 +1,6 @@
 package com.beduno.stay;
 
+import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
@@ -48,6 +49,16 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class StayService {
 
+    /**
+     * The fields a client may sort stays by, mapped to the columns the native query orders by.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "dateFrom", "date_from",
+            "dateTo", "date_to",
+            "status", "status",
+            "createdAt", "created_at",
+            "updatedAt", "updated_at");
+
     private final StayRepository stayRepository;
     private final WorkerRepository workerRepository;
     private final RoomRepository roomRepository;
@@ -64,7 +75,7 @@ public class StayService {
         var page = stayRepository.findAllWithFilters(
                 agencyId, workerId, propertyId,
                 status != null ? status.name() : null,
-                dateFrom, dateTo, pageable);
+                dateFrom, dateTo, SortFields.toColumns(pageable, SORTABLE));
         return PageResponse.of(page.map(stayMapper::toResponse));
     }
 
