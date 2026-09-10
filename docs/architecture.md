@@ -505,7 +505,9 @@ One `t4g.small` EC2 instance in `eu-central-1` running three containers under do
 `context/foundation/infrastructure.md`.
 
 - Containerized Spring Boot app (multi-stage `docker/Dockerfile`, JRE 21 Alpine, non-root user,
-  `-XX:MaxRAMPercentage=75` against the compose `mem_limit`), built for **linux/arm64** because
+  `-XX:MaxRAMPercentage=65` against the compose `mem_limit` — the remaining 35% is metaspace,
+  code cache and thread stacks, which the percentage does not cover and the cgroup does), built
+  for **linux/arm64** because
   the host is Graviton
 - **PostgreSQL 16 runs as a container on the same box**, not as a managed service. Its data is a
   docker volume on the instance's root EBS volume, and `deploy/backup.sh` snapshots that volume —

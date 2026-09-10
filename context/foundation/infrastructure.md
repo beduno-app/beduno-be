@@ -312,7 +312,7 @@ and no production users. It is the wrong shape the moment somebody depends on it
 | R3 — ALB costs more than the app | **Gone.** There is no load balancer. Caddy does TLS on the instance. |
 | R4 — NAT Gateway added unnoticed | **Gone.** The instance is in a public subnet with a public IP and pulls from ECR directly. |
 | R5 — cold-start JVM serves a late-night check-in | **Changed, and worse.** There is no minimum task count to set: a stopped instance is a stopped API, and starting it takes minutes. Acceptable only because no operator depends on it yet. |
-| R6 — task shrunk to save money, JVM OOMs, no CI to catch it | **Closed both halves.** `-XX:MaxRAMPercentage=75` tracks the compose `mem_limit`, and CI now runs the suite on every push and pull request. |
+| R6 — task shrunk to save money, JVM OOMs, no CI to catch it | **Closed both halves.** `-XX:MaxRAMPercentage=65` tracks the compose `mem_limit`, and CI now runs the suite on every push and pull request. The research said 75; a review of the deployed shape corrected it, because the percentage bounds the heap while the cgroup bounds the whole process, and metaspace, code cache and thread stacks add roughly 250 MB on top. Exceeding the cgroup is a SIGKILL, not an OutOfMemoryError. |
 | R7 — rollback leaves newer schema under older code | **Unchanged.** Still `ddl-auto: validate`, still a loud failure rather than corruption, still needs additive migrations. Documented in the README rollback section. |
 | R8 — public URL exposes wide-open CORS | **Closed** (commit `fc14245`). Explicit allowlist; empty registers no mapping at all. |
 | R9 — ECS Express Mode is nine months old | **Gone.** Nothing here depends on it. |
