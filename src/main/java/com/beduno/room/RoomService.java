@@ -37,6 +37,7 @@ public class RoomService {
             "name", "name",
             "floor", "floor",
             "capacity", "capacity",
+            "blockedSpots", "blockedSpots",
             "genderRule", "genderRule",
             "status", "status",
             "createdAt", "createdAt",

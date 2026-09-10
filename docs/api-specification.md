@@ -45,15 +45,15 @@ Paginated response shape (`PageResponse`):
 Not every list endpoint is paginated — arrivals, occupancy, exceptions and the inspection roster return a **bare JSON array** with no envelope. This is noted per endpoint.
 
 ### Sort keys (read this before building a sort UI)
-The value of `sort=` depends on how the underlying query is written. Passing the wrong flavour produces a **500**, not a 400.
+`sort=` takes the **field names the response carries** — the same camelCase names as the JSON. How the query happens to be written underneath is no longer visible: the column names some of these endpoints used to require are deliberately **not** accepted. An unsupported field is **400 `error.sort.unsupported_field`**, never a 500.
 
-| Endpoint | Query type | `sort=` takes | Default |
-|----------|-----------|---------------|---------|
-| `GET /workers` | native SQL | **snake_case column names** — `last_name`, `first_name`, `internal_id`, `status`, `gender`, `created_at` | `last_name,asc` |
-| `GET /properties` | native SQL | **snake_case column names** — `name`, `city`, `status`, `created_at` | `name,asc` |
-| `GET /stays` | native SQL | **snake_case column names** — `date_from`, `date_to`, `status`, `created_at` | `date_from,desc` |
-| `GET /properties/{id}/rooms` | derived JPA | **entity property names** — `name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt` | `name,asc` |
-| `GET /audit` | JPQL | **entity property names** — `createdAt`, `action`, `entityType` | `createdAt,desc` |
+| Endpoint | `sort=` takes | Default |
+|----------|---------------|---------|
+| `GET /workers` | `firstName`, `lastName`, `internalId`, `status`, `gender`, `nationality`, `dateOfBirth`, `createdAt`, `updatedAt` | `lastName,asc` |
+| `GET /properties` | `name`, `address`, `city`, `status`, `createdAt`, `updatedAt` | `name,asc` |
+| `GET /stays` | `dateFrom`, `dateTo`, `status`, `createdAt`, `updatedAt` | `dateFrom,desc` |
+| `GET /properties/{id}/rooms` | `name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt` | `name,asc` |
+| `GET /audit` | `createdAt`, `entityType`, `entityId`, `action`, `actorUserId` | `createdAt,desc` |
 
 ### Error Response
 Every handled error uses the same envelope (`ErrorResponse`):
@@ -585,7 +585,7 @@ Rooms are identified by **`name`** (a string, unique per property) — there is 
 ### GET /api/v1/properties/{propertyId}/rooms
 **Query params:** `?page=0&size=50&sort=name,asc`
 
-There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes **entity property names** (`name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`), not column names.
+There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
 
 **Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
 
