@@ -4,7 +4,7 @@ Beduno is a worker-housing management API for temporary work agencies: Java 21, 
 
 ## Hard Rules
 
-- Every repository query filters by `agencyId`. Two sanctioned exceptions exist — `StayRepository.findPlannedArrivingOn` (the nightly cross-agency scheduler sweep) and `OccupancyService.loadWorkers`; any new cross-tenant query needs the same explicit justification.
+- Every repository query filters by `agencyId`. Three sanctioned exceptions exist — `StayRepository.findPlannedArrivingOn` (the nightly cross-agency scheduler sweep), `OccupancyService.loadWorkers`, and `BootstrapRunner` (runs at startup before any tenant exists, to ask whether the users table is empty); any new cross-tenant query needs the same explicit justification, recorded in @CLAUDE.md and here.
 - Never edit an existing Flyway migration. Add `src/main/resources/db/migration/V{n}__{description}.sql`.
 - Never hardcode user-facing text. Throw `BusinessException` subclasses carrying a message code, and define that code in all six bundles under `src/main/resources/i18n/` — `MessageBundleTest` fails on a missing key, a blank value, or a code referenced from Java but undefined.
 - Never log PII, passwords, or tokens.

@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -60,7 +61,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        if (!request.getRequestURI().startsWith(RATE_LIMITED_PATH_PREFIX)) {
+        if (!resolvePath(request).startsWith(RATE_LIMITED_PATH_PREFIX)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -81,6 +82,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
                     response.getWriter(),
                     ErrorResponse.of("RATE_LIMIT_EXCEEDED", "error.rate_limit_exceeded"));
         }
+    }
+
+    /**
+     * Decoded, and relative to the context path — deliberately not {@code getRequestURI()}, which
+     * is the raw URI as sent. Spring routes on the decoded path, so a caller who writes
+     * {@code /api/v1/%61uth/login} reaches the login handler while a raw prefix check sees a path
+     * that does not match and waves the request through unthrottled. That turned this filter into
+     * a formality for anyone who read it.
+     */
+    private String resolvePath(HttpServletRequest request) {
+        return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
     }
 
     private Bucket newBucket() {

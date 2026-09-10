@@ -151,4 +151,46 @@ class RateLimitFilterTest {
             }
         }
     }
+
+    @Nested
+    class PathMatching {
+
+        @Test
+        void shouldThrottle_whenPathIsPercentEncoded() throws Exception {
+            // Spring routes on the decoded path, so /api/v1/%61uth/login reaches the login handler.
+            // A prefix check against the raw URI does not match it, which let a brute-force run
+            // straight past this filter without ever consuming a token.
+            for (var i = 0; i < LIMIT; i++) {
+                assertThat(statusAfter(encodedRequest("203.0.113.9"))).isEqualTo(200);
+            }
+            assertThat(statusAfter(encodedRequest("203.0.113.9"))).isEqualTo(429);
+        }
+
+        @Test
+        void shouldShareOneBucket_whenTheSamePathIsWrittenTwoWays() throws Exception {
+            // Otherwise the attacker gets a fresh allowance per spelling of the same endpoint.
+            for (var i = 0; i < LIMIT; i++) {
+                assertThat(statusAfter(request("203.0.113.10", null))).isEqualTo(200);
+            }
+            assertThat(statusAfter(encodedRequest("203.0.113.10"))).isEqualTo(429);
+        }
+
+        @Test
+        void shouldNotThrottle_whenPathIsOutsideAuthEvenIfEncoded() throws Exception {
+            var chain = mock(FilterChain.class);
+            for (var i = 0; i < LIMIT + 5; i++) {
+                var request = new MockHttpServletRequest("GET", "/api/v1/%77orkers");
+                request.setRemoteAddr("203.0.113.11");
+                filter.doFilter(request, new MockHttpServletResponse(), chain);
+            }
+            verify(chain, org.mockito.Mockito.times(LIMIT + 5))
+                    .doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        }
+
+        private MockHttpServletRequest encodedRequest(String remoteAddr) {
+            var request = new MockHttpServletRequest("POST", "/api/v1/%61uth/login");
+            request.setRemoteAddr(remoteAddr);
+            return request;
+        }
+    }
 }

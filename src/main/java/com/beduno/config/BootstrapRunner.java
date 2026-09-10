@@ -69,8 +69,10 @@ public class BootstrapRunner implements ApplicationRunner {
         admin.setLanguage(properties.getAdminLanguage().trim());
         userRepository.save(admin);
 
-        log.info("Bootstrapped agency '{}' ({}) with AGENCY_ADMIN {}",
-                agency.getName(), agency.getId(), admin.getEmail());
+        // The email is deliberately absent: it is PII, this line goes to the container log, and
+        // the operator who set BOOTSTRAP_ADMIN_EMAIL already knows which address they chose.
+        log.info("Bootstrapped agency '{}' ({}) with its first AGENCY_ADMIN",
+                agency.getName(), agency.getId());
         log.warn("Remove the BOOTSTRAP_* variables from the environment now: they are a standing "
                 + "copy of an administrator password, re-read at every startup.");
     }
