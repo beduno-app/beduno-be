@@ -27,6 +27,10 @@ services:
       retries: 12
       start_period: 20s
     mem_limit: 256m
+    # The image stops on SIGINT (fast shutdown), which aborts sessions and checkpoints. Normally
+    # quick, but this volume is the only copy of the data: give the checkpoint room rather than
+    # forcing recovery-on-next-start to be the routine path.
+    stop_grace_period: 30s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -54,6 +58,11 @@ services:
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     mem_limit: 1024m
+    # application-prod.yml sets `shutdown: graceful` with a 25s per-phase timeout so a container
+    # stop does not sever in-flight requests. Compose's default grace period is 10s, so that
+    # budget could never be spent: SIGTERM, then SIGKILL fifteen seconds before the app intended
+    # to finish. This is the other half of that setting.
+    stop_grace_period: 30s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
