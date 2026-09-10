@@ -18,7 +18,7 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 
     Optional<Room> findByIdAndAgencyIdAndPropertyId(UUID id, UUID agencyId, UUID propertyId);
 
-    boolean existsByPropertyIdAndName(UUID propertyId, String name);
+    boolean existsByPropertyIdAndRoomNumber(UUID propertyId, String roomNumber);
 
     long countByAgencyIdAndPropertyId(UUID agencyId, UUID propertyId);
 }

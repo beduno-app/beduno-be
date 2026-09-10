@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record OccupancyExceptionResponse(
         UUID roomId,
-        String roomName,
+        String roomNumber,
         String exceptionType,
         int capacity,
         int blockedSpots,

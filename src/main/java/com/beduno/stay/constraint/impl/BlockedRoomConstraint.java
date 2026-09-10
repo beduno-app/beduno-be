@@ -20,7 +20,7 @@ public class BlockedRoomConstraint implements StayConstraint {
             hard.add(new HardViolation(
                     "ROOM_BLOCKED",
                     "constraint.room.blocked",
-                    Map.of("roomName", ctx.room().getName())
+                    Map.of("roomNumber", ctx.room().getRoomNumber())
             ));
         }
 

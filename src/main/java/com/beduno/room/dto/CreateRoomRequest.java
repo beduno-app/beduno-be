@@ -6,8 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record CreateRoomRequest(
-        @NotBlank @Size(max = 100) String name,
-        @Size(max = 50) String floor,
+        @NotBlank @Size(max = 100) String roomNumber,
+        Integer floor,
         @Min(1) int capacity,
         @Min(0) int blockedSpots,
         GenderRule genderRule,

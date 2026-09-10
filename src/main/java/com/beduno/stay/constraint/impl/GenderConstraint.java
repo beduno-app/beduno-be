@@ -19,7 +19,7 @@ public class GenderConstraint implements StayConstraint {
         var rule = ctx.room().getGenderRule();
         var gender = ctx.worker().getGender();
 
-        if (rule == GenderRule.ANY) {
+        if (rule == GenderRule.MIXED) {
             return;
         }
 
@@ -31,7 +31,7 @@ public class GenderConstraint implements StayConstraint {
                     "GENDER_MISMATCH",
                     "constraint.room.gender_mismatch",
                     Map.of(
-                            "roomName", ctx.room().getName(),
+                            "roomNumber", ctx.room().getRoomNumber(),
                             "genderRule", rule.name(),
                             "workerGender", gender.name()
                     )

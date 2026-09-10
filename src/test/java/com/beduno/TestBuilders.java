@@ -92,7 +92,7 @@ public final class TestBuilders {
         private String name = "Room 1";
         private int capacity = 4;
         private int blockedSpots = 0;
-        private GenderRule genderRule = GenderRule.ANY;
+        private GenderRule genderRule = GenderRule.MIXED;
         private RoomStatus status = RoomStatus.ACTIVE;
 
         public RoomBuilder id(UUID id) {
@@ -135,7 +135,7 @@ public final class TestBuilders {
             setId(room, id);
             room.setAgencyId(agencyId);
             room.setPropertyId(propertyId);
-            room.setName(name);
+            room.setRoomNumber(name);
             room.setCapacity(capacity);
             room.setBlockedSpots(blockedSpots);
             room.setGenderRule(genderRule);

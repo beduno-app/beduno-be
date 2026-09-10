@@ -34,7 +34,7 @@ public class RoomService {
      * There is no roomNumber: the field a client sees in the response is name.
      */
     private static final Map<String, String> SORTABLE = Map.of(
-            "name", "name",
+            "roomNumber", "roomNumber",
             "floor", "floor",
             "capacity", "capacity",
             "blockedSpots", "blockedSpots",
@@ -69,8 +69,8 @@ public class RoomService {
         var agencyId = TenantContext.requireAgencyId();
         propertyService.getPropertyOrThrow(propertyId);
 
-        if (roomRepository.existsByPropertyIdAndName(propertyId, request.name())) {
-            throw new ConflictException("error.room.name_exists");
+        if (roomRepository.existsByPropertyIdAndRoomNumber(propertyId, request.roomNumber())) {
+            throw new ConflictException("error.room.number_exists");
         }
 
         if (request.blockedSpots() > request.capacity()) {
@@ -94,8 +94,8 @@ public class RoomService {
             throw new ValidationException("error.room.blocked_spots_exceed_capacity");
         }
 
-        if (!room.getName().equals(request.name()) && roomRepository.existsByPropertyIdAndName(propertyId, request.name())) {
-            throw new ConflictException("error.room.name_exists");
+        if (!room.getRoomNumber().equals(request.roomNumber()) && roomRepository.existsByPropertyIdAndRoomNumber(propertyId, request.roomNumber())) {
+            throw new ConflictException("error.room.number_exists");
         }
 
         var previous = snapshot(room);
@@ -131,7 +131,7 @@ public class RoomService {
 
     private Map<String, Object> snapshot(Room room) {
         var map = new LinkedHashMap<String, Object>();
-        map.put("name", room.getName());
+        map.put("roomNumber", room.getRoomNumber());
         map.put("status", room.getStatus().name());
         map.put("capacity", room.getCapacity());
         map.put("blockedSpots", room.getBlockedSpots());

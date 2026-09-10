@@ -5,8 +5,8 @@ import java.util.UUID;
 
 public record InspectionRoomEntry(
         UUID roomId,
-        String roomName,
-        String floor,
+        String roomNumber,
+        Integer floor,
         List<OccupantSummary> expectedOccupants,
         List<OccupantSummary> checkedInOccupants
 ) {

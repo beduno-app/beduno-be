@@ -23,11 +23,11 @@ public class Room extends BaseEntity {
     @Column(name = "property_id", nullable = false)
     private UUID propertyId;
 
-    @Column(nullable = false)
-    private String name;
+    @Column(name = "room_number", nullable = false)
+    private String roomNumber;
 
     @Column
-    private String floor;
+    private Integer floor;
 
     @Column(nullable = false)
     private int capacity = 1;
@@ -37,7 +37,7 @@ public class Room extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "gender_rule", nullable = false)
-    private GenderRule genderRule = GenderRule.ANY;
+    private GenderRule genderRule = GenderRule.MIXED;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

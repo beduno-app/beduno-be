@@ -1,7 +1,7 @@
 package com.beduno.room;
 
 public enum GenderRule {
-    ANY,
+    MIXED,
     MALE_ONLY,
     FEMALE_ONLY
 }

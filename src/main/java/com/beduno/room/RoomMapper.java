@@ -16,7 +16,7 @@ public interface RoomMapper {
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
-    @Mapping(target = "genderRule", defaultExpression = "java(com.beduno.room.GenderRule.ANY)")
+    @Mapping(target = "genderRule", defaultExpression = "java(com.beduno.room.GenderRule.MIXED)")
     Room toEntity(CreateRoomRequest request);
 
     @Mapping(target = "id", ignore = true)

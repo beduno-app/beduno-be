@@ -44,7 +44,7 @@ class RoomSortIntegrationTest extends IntegrationTestBase {
     }
 
     private void createRoom(String name) {
-        var request = new CreateRoomRequest(name, "1", 4, 0, GenderRule.ANY, null);
+        var request = new CreateRoomRequest(name, 1, 4, 0, GenderRule.MIXED, null);
         var response = restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), RoomResponse.class);
@@ -52,25 +52,25 @@ class RoomSortIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void shouldSortRoomsByName_whenClientSortsByAFieldTheResponseCarries() {
+    void shouldSortRoomsByRoomNumber_whenClientSortsByAFieldTheResponseCarries() {
         var response = restTemplate.exchange(
-                "/api/v1/properties/" + property.id() + "/rooms?sort=name,asc", HttpMethod.GET,
+                "/api/v1/properties/" + property.id() + "/rooms?sort=roomNumber,asc", HttpMethod.GET,
                 new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
                 new ParameterizedTypeReference<PageResponse<RoomResponse>>() { });
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().content()).extracting(RoomResponse::name)
+        assertThat(response.getBody().content()).extracting(RoomResponse::roomNumber)
                 .containsExactly("Room 101", "Room 102");
     }
 
     /**
-     * roomNumber is what the SPA sends and it exists nowhere -- not on the entity, not in
-     * RoomResponse. It used to reach Spring Data and come back as a 500.
+     * The inverse of what this asserted before the contract moved: roomNumber is now the field,
+     * and "name" -- what the backend used to call it -- is the one that no longer exists.
      */
     @Test
-    void shouldReturnBadRequest_whenSortingRoomsByRoomNumber() {
+    void shouldReturnBadRequest_whenSortingRoomsByTheOldFieldName() {
         var response = restTemplate.exchange(
-                "/api/v1/properties/" + property.id() + "/rooms?sort=roomNumber,asc",
+                "/api/v1/properties/" + property.id() + "/rooms?sort=name,asc",
                 HttpMethod.GET, new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

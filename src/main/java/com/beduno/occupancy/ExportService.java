@@ -27,7 +27,7 @@ public class ExportService {
         for (var room : occupancyService.getOccupancy(propertyId, date)) {
             if (room.occupants().isEmpty()) {
                 sb.append(csvRow(
-                        room.roomName(),
+                        room.roomNumber(),
                         blankIfNull(room.floor()),
                         String.valueOf(room.capacity()),
                         String.valueOf(room.blockedSpots()),
@@ -37,7 +37,7 @@ public class ExportService {
             } else {
                 for (var occupant : room.occupants()) {
                     sb.append(csvRow(
-                            room.roomName(),
+                            room.roomNumber(),
                             blankIfNull(room.floor()),
                             String.valueOf(room.capacity()),
                             String.valueOf(room.blockedSpots()),
@@ -81,7 +81,7 @@ public class ExportService {
             var exLabel = msg("exception." + ex.exceptionType(), locale);
             if (ex.occupants().isEmpty()) {
                 sb.append(csvRow(
-                        ex.roomName(),
+                        ex.roomNumber(),
                         exLabel,
                         String.valueOf(ex.capacity()),
                         String.valueOf(ex.blockedSpots()),
@@ -91,7 +91,7 @@ public class ExportService {
             } else {
                 for (var occupant : ex.occupants()) {
                     sb.append(csvRow(
-                            ex.roomName(),
+                            ex.roomNumber(),
                             exLabel,
                             String.valueOf(ex.capacity()),
                             String.valueOf(ex.blockedSpots()),
@@ -148,7 +148,8 @@ public class ExportService {
         };
     }
 
-    private String blankIfNull(String value) {
-        return value != null ? value : "";
+    /** Takes Object because floor is now numeric; a null floor still exports as an empty cell. */
+    private String blankIfNull(Object value) {
+        return value != null ? String.valueOf(value) : "";
     }
 }

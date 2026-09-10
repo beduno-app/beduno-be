@@ -43,7 +43,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldCreateStay_whenValidRequest() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
 
             var request = new CreateStayRequest(
                     worker.id(), property.id(), room.id(),
@@ -67,7 +67,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldRejectCreate_whenFrontDesk() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
 
             var request = new CreateStayRequest(
                     worker.id(), property.id(), room.id(),
@@ -88,7 +88,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             var worker1 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var worker2 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1, 0, GenderRule.MIXED);
 
             var dateFrom = LocalDate.now().plusDays(10);
             var dateTo = LocalDate.now().plusDays(17);
@@ -113,8 +113,8 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldReturnHardViolation_whenWorkerAlreadyBooked() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room1 = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
-            var room2 = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room1 = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var room2 = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
 
             var dateFrom = LocalDate.now().plusDays(20);
             var dateTo = LocalDate.now().plusDays(27);
@@ -185,7 +185,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldReturnStayById() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(50);
             var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 
@@ -203,7 +203,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldReturnPagedList_whenFilteredByWorkerId() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(60);
             createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 
@@ -229,7 +229,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldUpdateStayDates() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(70);
             var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 
@@ -255,7 +255,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldCancelStay() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(80);
             var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 
@@ -283,7 +283,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldNotAccessStayFromOtherAgency() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(90);
             var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 
@@ -300,7 +300,7 @@ class StayIntegrationTest extends IntegrationTestBase {
         void shouldNotCancelStayFromOtherAgency() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.ANY);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
             var dateFrom = LocalDate.now().plusDays(100);
             var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateFrom.plusDays(7), null);
 

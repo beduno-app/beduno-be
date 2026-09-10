@@ -106,7 +106,7 @@ class ExportIntegrationTest extends IntegrationTestBase {
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(new CreateRoomRequest(
                         "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                        "1", 4, 0, GenderRule.ANY, null),
+                        1, 4, 0, GenderRule.MIXED, null),
                         authHeaders(Role.AGENCY_ADMIN)),
                 String.class);
 

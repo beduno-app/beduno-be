@@ -31,7 +31,7 @@ public class CapacityConstraint implements StayConstraint {
             hard.add(new HardViolation(
                     "CAPACITY_EXCEEDED",
                     "constraint.room.capacity.full",
-                    Map.of("roomName", room.getName(), "capacity", room.getCapacity(), "blocked", room.getBlockedSpots())
+                    Map.of("roomNumber", room.getRoomNumber(), "capacity", room.getCapacity(), "blocked", room.getBlockedSpots())
             ));
             return;
         }
@@ -49,7 +49,7 @@ public class CapacityConstraint implements StayConstraint {
             hard.add(new HardViolation(
                     "CAPACITY_EXCEEDED",
                     "constraint.room.capacity.exceeded",
-                    Map.of("roomName", room.getName(), "capacity", room.getCapacity(), "occupied", occupied)
+                    Map.of("roomNumber", room.getRoomNumber(), "capacity", room.getCapacity(), "occupied", occupied)
             ));
         }
     }

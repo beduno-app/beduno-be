@@ -55,7 +55,7 @@ public class OccupancyService {
             var occupants = toOccupantSummaries(roomStays, workerMap);
             return new RoomOccupancyResponse(
                     room.getId(),
-                    room.getName(),
+                    room.getRoomNumber(),
                     room.getFloor(),
                     room.getCapacity(),
                     room.getBlockedSpots(),
@@ -86,13 +86,13 @@ public class OccupancyService {
 
             if (checkedIn.size() > room.availableSpots()) {
                 exceptions.add(new OccupancyExceptionResponse(
-                        room.getId(), room.getName(), "OVER_CAPACITY",
+                        room.getId(), room.getRoomNumber(), "OVER_CAPACITY",
                         room.getCapacity(), room.getBlockedSpots(), checkedIn.size(),
                         toOccupantSummaries(checkedIn, workerMap)
                 ));
             } else if (!expected.isEmpty()) {
                 exceptions.add(new OccupancyExceptionResponse(
-                        room.getId(), room.getName(), "PENDING_ARRIVAL",
+                        room.getId(), room.getRoomNumber(), "PENDING_ARRIVAL",
                         room.getCapacity(), room.getBlockedSpots(), checkedIn.size(),
                         toOccupantSummaries(expected, workerMap)
                 ));
@@ -119,7 +119,7 @@ public class OccupancyService {
             var checkedIn = checkedInByRoom.getOrDefault(room.getId(), List.of());
             return new InspectionRoomEntry(
                     room.getId(),
-                    room.getName(),
+                    room.getRoomNumber(),
                     room.getFloor(),
                     toOccupantSummaries(allActive, workerMap),
                     toOccupantSummaries(checkedIn, workerMap)
@@ -139,14 +139,14 @@ public class OccupancyService {
 
         var checkedInByRoom = stays.stream()
                 .collect(Collectors.groupingBy(Stay::getRoomId));
-        var roomNameById = rooms.stream()
-                .collect(Collectors.toMap(r -> r.getId(), r -> r.getName()));
+        var roomNumberById = rooms.stream()
+                .collect(Collectors.toMap(r -> r.getId(), r -> r.getRoomNumber()));
 
         var reportByRoomId = request.rooms().stream()
                 .collect(Collectors.toMap(RoomActualOccupancy::roomId, RoomActualOccupancy::presentWorkerIds));
 
         var discrepancies = new ArrayList<RoomDiscrepancy>();
-        for (var roomId : roomNameById.keySet()) {
+        for (var roomId : roomNumberById.keySet()) {
             var expectedStays = checkedInByRoom.getOrDefault(roomId, List.of());
             var presentWorkerIds = reportByRoomId.getOrDefault(roomId, List.of());
             var expectedWorkerIds = expectedStays.stream().map(Stay::getWorkerId).collect(Collectors.toSet());
@@ -163,7 +163,7 @@ public class OccupancyService {
                 }
             }
             if (!items.isEmpty()) {
-                discrepancies.add(new RoomDiscrepancy(roomId, roomNameById.get(roomId), items));
+                discrepancies.add(new RoomDiscrepancy(roomId, roomNumberById.get(roomId), items));
             }
         }
         return new InspectionDiscrepancyResponse(discrepancies, !discrepancies.isEmpty());

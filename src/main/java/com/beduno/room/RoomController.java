@@ -43,7 +43,7 @@ public class RoomController {
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<PageResponse<RoomResponse>> findAll(
             @PathVariable UUID propertyId,
-            @PageableDefault(sort = "name", direction = Sort.Direction.ASC) Pageable pageable) {
+            @PageableDefault(sort = "roomNumber", direction = Sort.Direction.ASC) Pageable pageable) {
         return ResponseEntity.ok(roomService.findAllByPropertyId(propertyId, pageable));
     }
 

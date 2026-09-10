@@ -287,7 +287,7 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
     private RoomResponse createRoom(UUID propertyId, int capacity, int blockedSpots) {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                null, capacity, blockedSpots, GenderRule.ANY, null
+                null, capacity, blockedSpots, GenderRule.MIXED, null
         );
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,

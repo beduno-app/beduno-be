@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record RoomDiscrepancy(
         UUID roomId,
-        String roomName,
+        String roomNumber,
         List<WorkerDiscrepancy> items
 ) {
 }

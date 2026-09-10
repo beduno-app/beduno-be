@@ -271,7 +271,7 @@ class ConstraintEngineTest {
 
         @Test
         void shouldNotAddViolation_whenGenderRuleIsAny() {
-            var room = TestBuilders.aRoom().genderRule(GenderRule.ANY).build();
+            var room = TestBuilders.aRoom().genderRule(GenderRule.MIXED).build();
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 

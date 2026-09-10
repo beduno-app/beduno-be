@@ -5,8 +5,8 @@ import java.util.UUID;
 
 public record RoomOccupancyResponse(
         UUID roomId,
-        String roomName,
-        String floor,
+        String roomNumber,
+        Integer floor,
         int capacity,
         int blockedSpots,
         int occupiedSpots,
