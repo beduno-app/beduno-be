@@ -105,7 +105,7 @@ against Testcontainers.
 ### Tasks
 1. ✅ Rate limiting on auth endpoints — Bucket4j, 10 req/min per IP. Bucket map is never evicted (see S4)
 2. ⚠️ Input sanitization review — no artifact was produced; nothing to verify against
-3. ✅ CORS configured — but wide open with credentials allowed (see S3)
+3. ✅ CORS configured — originally wide open with credentials allowed; narrowed to an env-driven allowlist in `fc14245` (S3 closed)
 4. ⚠️ Spring Actuator — `health` and `info` exposed; **`metrics` was planned and is not exposed**
 5. ✅ Structured logging with MDC (requestId, userId, agencyId) and JSON output under the prod profile
 6. ✅ OpenAPI documentation — bearer scheme, `@Operation` on all controllers

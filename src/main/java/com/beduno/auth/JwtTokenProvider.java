@@ -19,6 +19,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JwtTokenProvider {
 
+    /** Stamped on refresh tokens only. Access tokens carry no {@code type} claim at all. */
+    public static final String REFRESH_TOKEN_TYPE = "refresh";
+
     private final JwtConfig jwtConfig;
 
     private SecretKey getSigningKey() {
@@ -51,7 +54,7 @@ public class JwtTokenProvider {
 
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("type", "refresh")
+                .claim("type", REFRESH_TOKEN_TYPE)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(getSigningKey())
@@ -70,6 +73,20 @@ public class JwtTokenProvider {
         try {
             parseToken(token);
             return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * True only for tokens stamped {@code type: "refresh"}. Access tokens are handed to every
+     * client call and are correspondingly more exposed, so letting one stand in for a refresh
+     * token would let a leaked access token be renewed into a fresh 7-day refresh token — the
+     * short lifetime that makes an access token acceptable to spread around would buy nothing.
+     */
+    public boolean isRefreshToken(String token) {
+        try {
+            return REFRESH_TOKEN_TYPE.equals(parseToken(token).get("type", String.class));
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }

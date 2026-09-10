@@ -220,7 +220,7 @@ What is actually enforced, as opposed to intended:
 
 ## API Requirements
 
-All routes are prefixed `/api/v1`. `/api/v1/auth/**`, `/actuator/health` and the Swagger paths are public; everything else requires a bearer token. Unauthenticated requests to protected paths return **401** (`RestAuthenticationEntryPoint`, `UNAUTHORIZED` / `error.auth.unauthorized`); role denials return **403**. `POST /auth/login` and `/auth/refresh` are rate limited to 10 requests/minute per client IP (429).
+All routes are prefixed `/api/v1`. `/api/v1/auth/login`, `/api/v1/auth/refresh` and `/actuator/health` are public — `/api/v1/auth/me` is not, despite the shared prefix — and the Swagger paths are public only while `beduno.security.public-api-docs` is true, which the `prod` profile turns off. Everything else requires a bearer token. Unauthenticated requests to protected paths return **401** (`RestAuthenticationEntryPoint`, `UNAUTHORIZED` / `error.auth.unauthorized`); role denials return **403**. `POST /auth/login` and `/auth/refresh` are rate limited to 10 requests/minute per client IP (429).
 
 ### Auth
 - `POST /auth/login` - email + password, returns access + refresh tokens; bad credentials -> **401**
@@ -230,7 +230,7 @@ All routes are prefixed `/api/v1`. `/api/v1/auth/**`, `/actuator/health` and the
 ### Arrivals Workflow
 - `GET /stays/arrivals?propertyId=&date=` - stays in `EXPECTED_TODAY` with `dateFrom = date`
 - `POST /stays/{id}/check-in` - confirm arrival; body `{roomId?, overrideReason?}`
-- `POST /stays/{id}/no-show` - mark no-show; body `{reasonTag}` (required), stored in `stays.no_show_reason`
+- `POST /stays/{id}/no-show` - mark no-show; body `{noShowReason}` (required), stored in `stays.no_show_reason`
 - `POST /stays/{id}/check-out` - body `{actualDateTo?}`
 - `POST /stays/{id}/move` - body `{targetRoomId, overrideReason?}`; checks the old stay out and returns the new one
 

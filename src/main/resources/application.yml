@@ -35,9 +35,19 @@ springdoc:
     tags-sorter: alpha
 
 beduno:
+  # Creates the first agency and administrator on an empty database, then does nothing on every
+  # later start. Off by default; see the deployment runbook in README.md.
+  bootstrap:
+    enabled: ${BOOTSTRAP_ENABLED:false}
+    agency-name: ${BOOTSTRAP_AGENCY_NAME:}
+    admin-email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    admin-first-name: ${BOOTSTRAP_ADMIN_FIRST_NAME:Agency}
+    admin-last-name: ${BOOTSTRAP_ADMIN_LAST_NAME:Admin}
+    admin-language: ${BOOTSTRAP_ADMIN_LANGUAGE:PL}
   scheduler:
     arrival-transition-cron: "0 0 6 * * *"
   jwt:
-    secret: ${JWT_SECRET:beduno-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}
+    secret: ${JWT_SECRET}
     access-token-expiration-ms: 3600000
     refresh-token-expiration-ms: 604800000

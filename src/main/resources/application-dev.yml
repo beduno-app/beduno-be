@@ -13,3 +13,7 @@ logging:
   level:
     com.beduno: DEBUG
     org.springframework.security: DEBUG
+
+beduno:
+  jwt:
+    secret: ${JWT_SECRET:beduno-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}

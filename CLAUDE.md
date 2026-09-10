@@ -9,7 +9,8 @@ Beduno is a worker housing management system for temporary work agencies. Java 2
 ```bash
 ./gradlew compileJava          # Compile
 ./gradlew test                 # All tests (requires Docker for Testcontainers)
-./gradlew bootRun              # Run locally (needs PostgreSQL via docker/docker-compose.yml)
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun   # Run locally (needs PostgreSQL via docker/docker-compose.yml).
+                                              # Without the dev profile there is no JWT_SECRET default and startup fails.
 docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 ```
 
@@ -34,7 +35,13 @@ docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 
 ## Multi-Tenancy
 
-Shared schema with `agency_id` discriminator. `TenantContext` (ThreadLocal) set by `TenantFilter` from JWT claims. Every repository query MUST filter by agencyId, with two sanctioned exceptions: `StayRepository.findPlannedArrivingOn` (deliberately cross-tenant — it backs the nightly scheduler sweep that transitions PLANNED stays to EXPECTED_TODAY across all agencies) and `OccupancyService.loadWorkers` (uses `findAllById`, safe today only because the ids it's given already came from an agency-filtered stay query — don't reuse that pattern with an unfiltered id list). Any new cross-tenant query needs the same explicit justification.
+Shared schema with `agency_id` discriminator. `TenantContext` (ThreadLocal) set by `TenantFilter` from JWT claims. Every repository query MUST filter by agencyId, with these sanctioned exceptions:
+
+- `StayRepository.findPlannedArrivingOn` — deliberately cross-tenant; it backs the nightly scheduler sweep that transitions PLANNED stays to EXPECTED_TODAY across all agencies.
+- `OccupancyService.loadWorkers` — uses `findAllById`, safe today only because the ids it's given already came from an agency-filtered stay query. Don't reuse that pattern with an unfiltered id list.
+- `BootstrapRunner` — `userRepository.count()` and `AgencyRepository` (plain `JpaRepository`) run before any tenant exists, which is the point: the runner's whole question is whether the users table is empty. It runs once at startup, never on a request, and there is no `TenantContext` to filter by.
+
+Any new cross-tenant query needs the same explicit justification, recorded here and in AGENTS.md.
 
 ## Auth
 

@@ -196,13 +196,14 @@ beduno-be/
 │   │       │   ├── V4__create_properties_rooms.sql
 │   │       │   ├── V5__create_stays.sql
 │   │       │   ├── V6__create_audit_events.sql
-│   │       │   └── V7__add_stay_no_show_reason.sql
+│   │       │   ├── V7__add_stay_no_show_reason.sql
+│   │       │   └── V8__unique_user_email.sql
 │   │       └── i18n/
 │   │           ├── messages.properties
 │   │           ├── messages_pl.properties
 │   │           ├── messages_en.properties
 │   │           ├── messages_de.properties
-│   │           ├── messages_ua.properties
+│   │           ├── messages_uk.properties
 │   │           └── messages_ru.properties
 │   └── test/
 │       └── java/com/beduno/
@@ -268,7 +269,8 @@ users (
     id, agency_id, email, password_hash, first_name, last_name,
     role, language DEFAULT 'PL', assigned_property_ids UUID[] NOT NULL DEFAULT '{}',
     status DEFAULT 'ACTIVE', last_login_at,
-    UNIQUE (agency_id, email)   -- uq_users_email_agency
+    UNIQUE (agency_id, email),  -- uq_users_email_agency
+    UNIQUE (email)              -- uq_users_email (V8); login resolves by email alone
 )
 
 workers (
@@ -487,7 +489,10 @@ State changes on Stay, Worker, Room and Property produce an `AuditEvent`
 - Filtering via query params (e.g. `?status=CHECKED_IN&propertyId=...`)
 - All timestamps in UTC (ISO 8601); all IDs are UUIDs
 - API versioning via URL prefix: `/api/v1/`
-- OpenAPI served at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`; both are `permitAll`
+- OpenAPI served at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`; both are `permitAll` only
+  while `beduno.security.public-api-docs` is true (the default). The `prod` profile sets it false
+  **and** disables springdoc, so in production the documents are neither served nor anonymous —
+  handing an attacker a map of the API is a deployment choice, not a constant
 
 ## Deployment
 
@@ -496,13 +501,34 @@ State changes on Stay, Worker, Room and Property produce an `AuditEvent`
 - `dev` profile enables SQL logging and DEBUG logging for `com.beduno`
 - Flyway runs migrations on startup; Hibernate is `ddl-auto: validate`
 
-### Production (future)
-- Containerized Spring Boot app (multi-stage `docker/Dockerfile`, JRE 21 Alpine, non-root user)
-- PostgreSQL managed service; `prod` profile reads `DATABASE_URL` / `DATABASE_USERNAME` /
-  `DATABASE_PASSWORD`, and `JWT_SECRET` must be supplied
+### Production
+One `t4g.small` EC2 instance in `eu-central-1` running three containers under docker compose
+(`deploy/docker-compose.prod.yml`), stopped when the API is not in use. Full runbook in
+`README.md`; the shape and its cost trade-off are recorded in
+`context/foundation/infrastructure.md`.
+
+- Containerized Spring Boot app (multi-stage `docker/Dockerfile`, JRE 21 Alpine, non-root user,
+  `-XX:MaxRAMPercentage=65` against the compose `mem_limit` — the remaining 35% is metaspace,
+  code cache and thread stacks, which the percentage does not cover and the cgroup does), built
+  for **linux/arm64** because
+  the host is Graviton
+- **PostgreSQL 16 runs as a container on the same box**, not as a managed service. Its data is a
+  docker volume on the instance's root EBS volume, and `deploy/backup.sh` snapshots that volume —
+  there is no replica and no point-in-time recovery
+- `prod` profile reads `DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD`, and
+  `JWT_SECRET` must be supplied. Only the secrets come from SSM Parameter Store, via
+  `deploy/boot.sh`, which writes them into a 0600 env file on every boot; the JDBC URL and
+  username are fixed values in `deploy/docker-compose.prod.yml`, because the database is a
+  container on the same internal network and neither is a secret
+- Caddy terminates TLS (Let's Encrypt, HTTP-01) and is the only container publishing ports;
+  `server.forward-headers-strategy: native` is what makes `getRemoteAddr()` the real client
+  behind it, which the login throttle and HSTS both depend on
+- The first agency and administrator are created at startup from `BOOTSTRAP_*` on an empty
+  database; there is no user-management API (Q6)
 - `prod` logging emits one structured line per event including `rid`/`uid`/`aid` from the MDC
-- Stateless backend (JWT) allows horizontal scaling. Note the scheduler and the in-memory
-  rate-limit buckets are per-instance and are not coordinated across replicas.
+- Stateless backend (JWT) allows horizontal scaling, though this deployment is deliberately a
+  single instance. The scheduler and the in-memory rate-limit buckets are per-instance and are
+  not coordinated across replicas.
 - Actuator exposes only `health` and `info`. `/actuator/health` is `permitAll` (used by the
   container `HEALTHCHECK`); `/actuator/info` is exposed but still requires authentication.
   No `metrics` endpoint is exposed.

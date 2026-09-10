@@ -9,7 +9,10 @@
 ## General Conventions
 
 ### Authentication
-All endpoints except `/api/v1/auth/**`, `/actuator/health` and the OpenAPI paths require a JWT Bearer token:
+All endpoints except `/api/v1/auth/login`, `/api/v1/auth/refresh` and `/actuator/health` require a
+JWT Bearer token. `/api/v1/auth/me` is **not** anonymous despite its prefix. The OpenAPI paths are
+anonymous only when `beduno.security.public-api-docs` is true, which it is by default and is not
+under the `prod` profile:
 
 ```
 Authorization: Bearer <token>
@@ -166,7 +169,15 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.constraint.violated`, `error.constraint.soft_violations` | constraint engine (422) |
 | `constraint.*` | individual violations inside `details[]` |
 
-> **Caveat — i18n coverage is partial.** The bundles under `src/main/resources/i18n/` (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_ua`, all five with identical key sets) do **not** contain `error.worker.not_found`, `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`, `error.room.not_found`, `error.room.name_exists` or `error.room.blocked_spots_exceed_capacity`. The backend never resolves these codes itself — it returns the code — so the frontend must supply its own translations for them.
+> **Note — the backend returns codes, not prose.** The bundles under `src/main/resources/i18n/`
+> (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_uk` — six files with identical key sets) define every
+> code the Java sources reference, including `error.worker.not_found`,
+> `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`,
+> `error.room.not_found`, `error.room.name_exists` and
+> `error.room.blocked_spots_exceed_capacity`; `MessageBundleTest` fails the build on a missing key,
+> a blank value, or a code referenced from Java but undefined. They are used for CSV export
+> headers. API error responses still carry the **code**, not a translated string, so the frontend
+> supplies its own copy for anything it renders.
 
 ---
 
@@ -294,7 +305,10 @@ Exchange a refresh token for a fresh token pair. Rate limited.
 
 **Response 401:** `error.auth.invalid_refresh_token` — token failed signature/expiry validation, **or** validated but its subject no longer has a user row (deliberately reported as 401, not 404, so it cannot be used to probe for deleted accounts).
 
-> **Caveat.** The endpoint validates the signature but never checks `type == "refresh"`, so a still-valid **access** token is accepted here as a refresh token.
+Access tokens are **not** accepted here. Both token kinds are signed with the same key, so the
+endpoint additionally requires the `type: "refresh"` claim that only refresh tokens carry; an
+access token presented here returns 401. The reverse is refused too — a refresh token sent as a
+bearer credential leaves the request anonymous rather than authenticating it.
 
 ### GET /api/v1/auth/me
 Return the authenticated user's profile, re-read from the database.
@@ -305,7 +319,9 @@ Return the authenticated user's profile, re-read from the database.
 
 **Response 404:** `error.auth.user_not_found` — the token is valid but its subject has no user row.
 
-> **Caveat.** `/api/v1/auth/**` is `permitAll` in `SecurityConfig`, so this path is not protected by the entry point. Calling it with **no** `Authorization` header dereferences a null principal and returns **500**, not 401.
+**Response 401:** no token, or a token that is not an access token. Only `/auth/login` and
+`/auth/refresh` are anonymous; this path falls through to `anyRequest().authenticated()` and is
+answered by the entry point like any other protected endpoint.
 
 ---
 
@@ -927,9 +943,9 @@ The constraint engine always runs (against the effective room), excluding this s
 
 **Request:**
 ```json
-{ "reasonTag": "NO_CONTACT" }
+{ "noShowReason": "NO_CONTACT" }
 ```
-`reasonTag` is a **`@NotBlank` free-form string** — there is no enum and no server-side vocabulary. It is stored in the dedicated `stays.no_show_reason` column (`VARCHAR(100)`) and copied to the audit event's `reason`. It **no longer overwrites `notes`**; any operational note on the stay survives.
+`noShowReason` is a **`@NotBlank` free-form string** — there is no enum and no server-side vocabulary. It is stored in the dedicated `stays.no_show_reason` column (`VARCHAR(100)`) and copied to the audit event's `reason`. It **no longer overwrites `notes`**; any operational note on the stay survives.
 
 There is no `notes` field on this request.
 
@@ -937,9 +953,7 @@ There is no `notes` field on this request.
 
 **Response 409:** `error.stay.invalid_status_transition` — only from `EXPECTED_TODAY`
 
-**Response 400:** blank `reasonTag`
-
-> **Caveat.** A `reasonTag` longer than 100 characters is not rejected by validation and fails at the database as a 500.
+**Response 400:** blank `noShowReason`, or longer than 100 characters (`@Size` matches the column width, so an over-long value is rejected at validation rather than at the database)
 
 ---
 
@@ -952,7 +966,7 @@ There is no `notes` field on this request.
 ```json
 { "actualDateTo": "2026-04-30" }
 ```
-`actualDateTo` is optional. When present it **overwrites** `dateTo` — earlier or later, no validation either way. When absent `dateTo` is left as planned (including `null` for an open-ended stay). There is no `reasonTag` and no `notes` on this request.
+`actualDateTo` is optional. When present it **overwrites** `dateTo` — earlier or later, no validation either way. When absent `dateTo` is left as planned (including `null` for an open-ended stay). There is no reason field and no `notes` on this request.
 
 The constraint engine does not run.
 
@@ -969,7 +983,7 @@ The constraint engine does not run.
 ```json
 { "stayIds": ["uuid-1", "uuid-2", "uuid-3"] }
 ```
-`stayIds` is `@NotEmpty`. There is no `reasonTag` and no `actualDateTo` — dates are left exactly as planned.
+`stayIds` is `@NotEmpty`. There is no reason field and no `actualDateTo` — dates are left exactly as planned.
 
 **Response 200:**
 ```json
@@ -997,7 +1011,7 @@ Move a checked-in worker to another room **in the same property**.
   "overrideReason": "Maintenance in the old room"
 }
 ```
-`targetRoomId` is `@NotNull`. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no `reasonTag` and no `notes` — **cross-property moves are not supported**.
+`targetRoomId` is `@NotNull`. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no reason field and no `notes` — **cross-property moves are not supported**.
 
 Mechanics:
 1. The current stay is set to `CHECKED_OUT` (its `dateFrom`/`dateTo` are left untouched)
@@ -1217,7 +1231,7 @@ Query the immutable audit trail. Always scoped to the caller's agency.
   - **WORKER:** `status`, `internalId`, `firstName`, `lastName`, `gender`
   - **ROOM:** `name`, `status`, `capacity`, `blockedSpots`, `genderRule`
   - **PROPERTY:** `name`, `status`, and `city` when set
-- `reason` is populated only from: stay update / check-in / move `overrideReason`, no-show `reasonTag`, and the literal `"bulk_import"` on workers created by CSV import. It is `null` everywhere else. There is no separate `notes` or `reasonTag` field.
+- `reason` is populated only from: stay update / check-in / move `overrideReason`, no-show `noShowReason`, and the literal `"bulk_import"` on workers created by CSV import. It is `null` everywhere else. There is no separate `notes` or reason-tag field.
 
 ---
 
@@ -1267,9 +1281,9 @@ Everything below appeared in the original specification and **is not built**. Th
 
 The original specification defined a fourteen-value predefined tag vocabulary (`ON_TIME`, `ARRIVED_LATE`, `DOCS_MISSING`, `NO_CONTACT`, `TRANSPORT_DELAY`, `PLANNED_DEPARTURE`, `PROJECT_ENDED`, `EARLY_DEPARTURE`, `ROOM_CONFLICT`, `MAINTENANCE`, `CAPACITY_ISSUE`, `WORKER_REQUEST`, `MANAGER_DECISION`, `OTHER`) shared across check-in, check-out, move, stay and room-block operations.
 
-**Not built.** There is no reason-tag enum, constant set or validation anywhere in the codebase, and no endpoint accepts a `reasonTag` except one:
+**Not built.** There is no reason-tag enum, constant set or validation anywhere in the codebase, and no endpoint accepts a reason tag except one:
 
-- `POST /stays/{id}/no-show` takes `reasonTag` as a **free-form `@NotBlank` String** (max 100 chars at the database level). Any text is accepted.
+- `POST /stays/{id}/no-show` takes `noShowReason` as a **free-form `@NotBlank` String** (max 100 chars, matching the column). Any text is accepted.
 
 Check-in, check-out, bulk-checkout, move and cancel accept **no** reason tag at all. Check-in and move take a free-form `overrideReason` instead, which serves a different purpose (suppressing soft constraint violations).
 

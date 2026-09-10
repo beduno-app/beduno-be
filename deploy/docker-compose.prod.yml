@@ -1,0 +1,94 @@
+# Production stack for the single-instance deployment. Runs on one t4g.small (2 GB), so the
+# memory limits below are a budget, not decoration: app 1024 + postgres 256 + caddy 96 = ~1.4 GB,
+# leaving ~600 MB for the OS and the docker daemon.
+#
+# The app image caps its heap with -XX:MaxRAMPercentage=65, which resolves against the mem_limit
+# here -- so changing app's mem_limit changes the JVM heap with it. The remaining 35% is not
+# slack: it is metaspace, code cache, thread stacks and direct buffers, which the percentage does
+# not cover and the cgroup limit does.
+#
+# Only caddy publishes ports. The app and the database are reachable on the internal network only.
+name: beduno
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: beduno
+      POSTGRES_USER: beduno
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beduno -d beduno"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 256m
+    # The image stops on SIGINT (fast shutdown), which aborts sessions and checkpoints. Normally
+    # quick, but this volume is the only copy of the data: give the checkpoint room rather than
+    # forcing recovery-on-next-start to be the routine path.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # application-prod.yml binds ${DATABASE_URL} with no fallback and expects a JDBC URL.
+      DATABASE_URL: jdbc:postgresql://postgres:5432/beduno
+      DATABASE_USERNAME: beduno
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      # Empty on purpose: no browser frontend exists, so no cross-origin caller is allowed.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Creates the first agency and administrator on an empty database and does nothing
+      # afterwards. There is no user-management API, so without this the deployed API has no
+      # account to log in with and every endpoint answers 401.
+      BOOTSTRAP_ENABLED: ${BOOTSTRAP_ENABLED:-false}
+      BOOTSTRAP_AGENCY_NAME: ${BOOTSTRAP_AGENCY_NAME:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    mem_limit: 1024m
+    # application-prod.yml sets `shutdown: graceful` with a 25s per-phase timeout so a container
+    # stop does not sever in-flight requests. Compose's default grace period is 10s, so that
+    # budget could never be spent: SIGTERM, then SIGKILL fifteen seconds before the app intended
+    # to finish. This is the other half of that setting.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. This volume is why restarting the box does not re-request a
+      # certificate from Let's Encrypt, whose rate limits are real and this box restarts by design.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    mem_limit: 96m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
