@@ -18,7 +18,9 @@ usage: instance.sh <command>
   stop [--no-snapshot]
                      snapshot the data volume, then stop the instance
   status             instance state, address and API health
-  logs [service] [n] tail container logs (default: all services, 100 lines)
+  logs [service] [n] tail container logs (default: all services, 100 lines).
+                     SSM caps returned output at 24000 characters; name a service and a
+                     smaller count when it truncates, or use `shell` for the full stream.
   shell              open an SSM session on the box
 USAGE
   exit 2
@@ -41,11 +43,17 @@ require_instance() {
   echo "$id"
 }
 
+# Always succeeds: an unset domain yields an empty string, and callers decide what that means.
+# Returning non-zero would kill them instead -- `url="$(site)"` under `set -e` takes the exit
+# status of the substitution, so the "no domain configured" branch below was unreachable.
 site() {
   local domain
   domain="$(aws ssm get-parameter --region "$REGION" --name /beduno/prod/DUCKDNS_DOMAIN \
     --query Parameter.Value --output text 2>/dev/null || true)"
-  [ -n "$domain" ] && echo "https://${domain}.duckdns.org"
+  if [ -n "$domain" ]; then
+    echo "https://${domain}.duckdns.org"
+  fi
+  return 0
 }
 
 # Runs a command on the box through SSM and prints its output. Nothing here needs a shell, and
@@ -56,6 +64,7 @@ remote() {
     --instance-ids "$id" --document-name AWS-RunShellScript \
     --parameters "commands=[\"${script}\"]" \
     --query Command.CommandId --output text)"
+  status=""
   for _ in $(seq 1 30); do
     sleep 2
     status="$(aws ssm get-command-invocation --region "$REGION" \
@@ -65,6 +74,18 @@ remote() {
       *) ;;
     esac
   done
+
+  # Without this, a command still Pending after a minute -- the SSM agent has not registered yet,
+  # which is exactly the state right after a start -- printed nothing and returned success, so the
+  # operator saw empty output and no reason for it.
+  case "$status" in
+    Success|Failed|Cancelled|TimedOut) ;;
+    *)
+      echo "ERROR: SSM command ${command_id} is still ${status:-unreachable} after 60s." >&2
+      echo "       The agent may not have registered yet; retry in a moment." >&2
+      return 1
+      ;;
+  esac
   aws ssm get-command-invocation --region "$REGION" \
     --command-id "$command_id" --instance-id "$id" \
     --query StandardOutputContent --output text

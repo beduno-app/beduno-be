@@ -2,8 +2,10 @@
 # memory limits below are a budget, not decoration: app 1024 + postgres 256 + caddy 96 = ~1.4 GB,
 # leaving ~600 MB for the OS and the docker daemon.
 #
-# The app image caps its heap with -XX:MaxRAMPercentage=75, which resolves against the mem_limit
-# here -- so changing app's mem_limit changes the JVM heap with it.
+# The app image caps its heap with -XX:MaxRAMPercentage=65, which resolves against the mem_limit
+# here -- so changing app's mem_limit changes the JVM heap with it. The remaining 35% is not
+# slack: it is metaspace, code cache, thread stacks and direct buffers, which the percentage does
+# not cover and the cgroup limit does.
 #
 # Only caddy publishes ports. The app and the database are reachable on the internal network only.
 name: beduno

@@ -37,9 +37,23 @@ docker buildx build \
   --push \
   "$root"
 
+# Remembered so a failed rollout can put it back. boot.sh reads this parameter on every boot, so
+# leaving it pointing at an image that does not start turns one bad deploy into a box that comes
+# up broken every time it is started.
+PREVIOUS_IMAGE="$(aws ssm get-parameter --region "$REGION" --name /beduno/prod/APP_IMAGE \
+  --query Parameter.Value --output text 2>/dev/null || true)"
+
 echo "pointing /beduno/prod/APP_IMAGE at ${TAG}"
 aws ssm put-parameter --region "$REGION" \
   --name /beduno/prod/APP_IMAGE --type String --overwrite --value "$IMAGE" >/dev/null
+
+rollback_parameter() {
+  if [ -n "$PREVIOUS_IMAGE" ] && [ "$PREVIOUS_IMAGE" != "$IMAGE" ]; then
+    echo "restoring APP_IMAGE to ${PREVIOUS_IMAGE##*:}" >&2
+    aws ssm put-parameter --region "$REGION" \
+      --name /beduno/prod/APP_IMAGE --type String --overwrite --value "$PREVIOUS_IMAGE" >/dev/null
+  fi
+}
 
 INSTANCE_ID="$(aws ec2 describe-instances --region "$REGION" \
   --filters "Name=tag:Name,Values=${NAME}" "Name=instance-state-name,Values=running" \
@@ -62,12 +76,16 @@ if ! COMMAND_ID="$(aws ssm send-command --region "$REGION" \
   --parameters 'commands=["systemctl restart beduno.service"]' \
   --query Command.CommandId --output text 2>/dev/null)"; then
   echo "WARNING: could not send the restart command (missing ssm:SendCommand?)." >&2
+  echo "         APP_IMAGE points at ${TAG}; the instance is still running the old image." >&2
   echo "         Roll it by hand:  aws ssm start-session --target ${INSTANCE_ID}" >&2
   echo "         then:             sudo systemctl restart beduno.service" >&2
-  exit 0
+  exit 1
 fi
 
-echo "  command ${COMMAND_ID}; waiting (boot.sh pulls the image and waits on health checks)"
+# boot.sh brings the stack up with --wait, so Success here means the containers reported healthy,
+# not merely that they were created.
+echo "  command ${COMMAND_ID}; waiting (boot.sh pulls the image and waits for health)"
+status=""
 for _ in $(seq 1 60); do
   sleep 10
   status="$(aws ssm get-command-invocation --region "$REGION" \
@@ -75,9 +93,24 @@ for _ in $(seq 1 60); do
     --query Status --output text 2>/dev/null || echo Pending)"
   case "$status" in
     Success) echo "  restarted"; break ;;
-    Failed|Cancelled|TimedOut) echo "ERROR: restart $status" >&2; exit 1 ;;
+    Failed|Cancelled|TimedOut)
+      echo >&2
+      echo "ERROR: restart $status -- the new image did not come up healthy." >&2
+      rollback_parameter
+      echo "       Logs:  ${here}/instance.sh logs app" >&2
+      exit 1
+      ;;
     *) printf '.' ;;
   esac
 done
+
+if [ "$status" != Success ]; then
+  echo >&2
+  echo "ERROR: gave up waiting after 10 minutes (last status: ${status:-unknown})." >&2
+  rollback_parameter
+  echo "       The instance may still be rolling; check ${here}/instance.sh status" >&2
+  exit 1
+fi
+
 echo
 "$here/instance.sh" status

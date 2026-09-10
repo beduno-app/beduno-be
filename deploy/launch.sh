@@ -51,8 +51,14 @@ trap 'rm -f "$USER_DATA"' EXIT
 python3 "$here/render-user-data.py" > "$USER_DATA"
 echo "user data: $(wc -c < "$USER_DATA") bytes"
 
-# --instance-initiated-shutdown-behavior stop: a "shutdown" typed inside the guest must never
-# terminate the box, because terminating it destroys the database volume.
+# Two independent guards on the volume that holds the only copy of the database:
+#   --instance-initiated-shutdown-behavior stop  -- a "shutdown" typed inside the guest stops the
+#     instance rather than terminating it
+#   --disable-api-termination                    -- and terminate-instances from the API or the
+#     console is refused outright, which the in-guest setting does nothing about
+# DeleteOnTermination is false for the same reason: if the instance is ever deliberately
+# terminated (the attribute has to be cleared first), the volume outlives it and the data is
+# recoverable. An orphaned 12 GB volume costs about a dollar a month; the data does not regrow.
 # No key pair and no port 22 -- shell access is via SSM Session Manager.
 INSTANCE_ID="$(aws ec2 run-instances --region "$REGION" \
   --image-id "$AMI_ID" \
@@ -62,8 +68,9 @@ INSTANCE_ID="$(aws ec2 run-instances --region "$REGION" \
   --associate-public-ip-address \
   --iam-instance-profile Name=beduno-ec2-profile \
   --instance-initiated-shutdown-behavior stop \
+  --disable-api-termination \
   --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
-  --block-device-mappings "[{\"DeviceName\":\"/dev/xvda\",\"Ebs\":{\"VolumeSize\":${VOLUME_GB},\"VolumeType\":\"gp3\",\"DeleteOnTermination\":true,\"Encrypted\":true}}]" \
+  --block-device-mappings "[{\"DeviceName\":\"/dev/xvda\",\"Ebs\":{\"VolumeSize\":${VOLUME_GB},\"VolumeType\":\"gp3\",\"DeleteOnTermination\":false,\"Encrypted\":true}}]" \
   --user-data "file://${USER_DATA}" \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=beduno}]" \
                        "ResourceType=volume,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=beduno}]" \
