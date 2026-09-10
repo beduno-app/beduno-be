@@ -179,7 +179,7 @@ class BedIntegrationTest extends IntegrationTestBase {
 
     private RoomResponse createRoom(UUID agencyId) {
         var property = createProperty(agencyId);
-        var request = new CreateRoomRequest("Room " + UUID.randomUUID().toString().substring(0, 8), 1, 4, 0, GenderRule.MIXED, null);
+        var request = new CreateRoomRequest("Room " + UUID.randomUUID().toString().substring(0, 8), 1, GenderRule.MIXED, null);
         var headers = authHeaders(Role.AGENCY_ADMIN, agencyId);
         return restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,

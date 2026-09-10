@@ -26,7 +26,8 @@ public interface RoomMapper {
     @Mapping(target = "updatedAt", ignore = true)
     void updateEntity(UpdateRoomRequest request, @MappingTarget Room room);
 
-    @Mapping(target = "availableSpots", expression = "java(room.availableSpots())")
+    @Mapping(target = "bedCount", ignore = true)
+    @Mapping(target = "availableBedCount", ignore = true)
     @Mapping(target = "currentOccupancy", ignore = true)
     @Mapping(target = "occupants", ignore = true)
     RoomResponse toResponse(Room room);

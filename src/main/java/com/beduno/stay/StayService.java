@@ -93,7 +93,7 @@ public class StayService {
         var property = getPropertyOrThrow(request.propertyId(), agencyId);
 
         var ctx = new ConstraintContext(worker, room, property,
-                request.dateFrom(), request.dateTo(), null);
+                request.dateFrom(), request.dateTo(), null, null);
         runConstraints(ctx, request.overrideReason());
 
         var stay = stayMapper.toEntity(request);
@@ -119,7 +119,7 @@ public class StayService {
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
 
         var ctx = new ConstraintContext(worker, room, property,
-                request.dateFrom(), request.dateTo(), stay.getId());
+                request.dateFrom(), request.dateTo(), stay.getId(), null);
         runConstraints(ctx, request.overrideReason());
 
         var previous = snapshot(stay);
@@ -152,7 +152,7 @@ public class StayService {
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
 
         var ctx = new ConstraintContext(worker, room, property,
-                stay.getDateFrom(), stay.getDateTo(), stay.getId());
+                stay.getDateFrom(), stay.getDateTo(), stay.getId(), null);
         runConstraints(ctx, request.overrideReason());
 
         if (request.roomId() != null) {
@@ -209,7 +209,7 @@ public class StayService {
         }
 
         var ctx = new ConstraintContext(worker, targetRoom, property,
-                today, originalDateTo, stay.getId());
+                today, originalDateTo, stay.getId(), null);
         runConstraints(ctx, request.overrideReason());
 
         var previousStay = snapshot(stay);
@@ -285,7 +285,7 @@ public class StayService {
                 var worker = getWorkerOrThrow(a.workerId(), agencyId);
                 var room = getRoomOrThrow(a.roomId(), agencyId);
                 var property = getPropertyOrThrow(a.propertyId(), agencyId);
-                var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null);
+                var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null, null);
                 runConstraints(ctx, a.overrideReason());
 
                 var stay = new Stay();

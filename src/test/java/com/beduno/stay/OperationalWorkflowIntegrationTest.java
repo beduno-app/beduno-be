@@ -1,6 +1,10 @@
 package com.beduno.stay;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.BedStatus;
+import com.beduno.bed.dto.BedResponse;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
+import com.beduno.bed.dto.UpdateBedRequest;
 import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
 import com.beduno.occupancy.dto.InspectionRoomEntry;
@@ -299,8 +303,19 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var worker2 = createWorker();
             checkedInStay(worker1.id(), property.id(), room.id());
             checkedInStay(worker2.id(), property.id(), room.id());
-            // Reduce capacity below current occupancy to create an exception
-            jdbcTemplate.update("UPDATE rooms SET capacity = 1 WHERE id = ?", room.id());
+            // Block one of the room's two beds so ACTIVE bed count (1) drops below the two
+            // checked-in workers -- the bed-derived equivalent of reducing capacity below occupancy.
+            var beds = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/rooms/" + room.id() + "/beds",
+                    HttpMethod.GET, new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<List<BedResponse>>() {}
+            ).getBody();
+            var bedToBlock = beds.get(0);
+            restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/rooms/" + room.id() + "/beds/" + bedToBlock.id(),
+                    HttpMethod.PUT,
+                    new HttpEntity<>(new UpdateBedRequest(bedToBlock.label(), BedStatus.BLOCKED), authHeaders(Role.AGENCY_ADMIN)),
+                    BedResponse.class);
 
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/exceptions?date=" + LocalDate.now(),
@@ -496,16 +511,35 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         ).getBody();
     }
 
-    private RoomResponse createRoom(UUID propertyId, int capacity, int blockedSpots) {
+    private RoomResponse createRoom(UUID propertyId, int bedCount, int blockedBedCount) {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                null, capacity, blockedSpots, GenderRule.MIXED, null
+                null, GenderRule.MIXED, null
         );
-        return restTemplate.exchange(
+        var room = restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
                 RoomResponse.class
         ).getBody();
+        generateBeds(propertyId, room.id(), bedCount, blockedBedCount);
+        return room;
+    }
+
+    private void generateBeds(UUID propertyId, UUID roomId, int bedCount, int blockedBedCount) {
+        if (bedCount <= 0) {
+            return;
+        }
+        var bedsUrl = "/api/v1/properties/" + propertyId + "/rooms/" + roomId + "/beds";
+        var beds = restTemplate.exchange(bedsUrl + "/bulk-generate", HttpMethod.POST,
+                new HttpEntity<>(new BulkGenerateBedsRequest(bedCount), authHeaders(Role.AGENCY_ADMIN)),
+                new ParameterizedTypeReference<List<BedResponse>>() {}
+        ).getBody();
+        for (int i = 0; i < blockedBedCount && i < beds.size(); i++) {
+            var bed = beds.get(i);
+            restTemplate.exchange(bedsUrl + "/" + bed.id(), HttpMethod.PUT,
+                    new HttpEntity<>(new UpdateBedRequest(bed.label(), BedStatus.BLOCKED), authHeaders(Role.AGENCY_ADMIN)),
+                    BedResponse.class);
+        }
     }
 
     private StayResponse createPlannedStay(UUID workerId, UUID propertyId, UUID roomId,

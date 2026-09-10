@@ -1,12 +1,13 @@
 package com.beduno.stay.constraint;
 
 import com.beduno.TestBuilders;
+import com.beduno.bed.Bed;
 import com.beduno.property.PropertyStatus;
 import com.beduno.room.GenderRule;
 import com.beduno.room.RoomStatus;
 import com.beduno.stay.StayRepository;
+import com.beduno.stay.constraint.impl.BedOccupancyConstraint;
 import com.beduno.stay.constraint.impl.BlockedRoomConstraint;
-import com.beduno.stay.constraint.impl.CapacityConstraint;
 import com.beduno.stay.constraint.impl.DoubleBookingConstraint;
 import com.beduno.stay.constraint.impl.GenderConstraint;
 import com.beduno.worker.Gender;
@@ -38,7 +39,7 @@ class ConstraintEngineTest {
     void setUp() {
         var constraints = List.<StayConstraint>of(
                 new BlockedRoomConstraint(),
-                new CapacityConstraint(stayRepository),
+                new BedOccupancyConstraint(stayRepository),
                 new DoubleBookingConstraint(stayRepository),
                 new GenderConstraint()
         );
@@ -49,8 +50,17 @@ class ConstraintEngineTest {
             com.beduno.worker.Worker worker,
             com.beduno.room.Room room,
             com.beduno.property.Property property) {
+        return ctx(worker, room, property, null, null);
+    }
+
+    private ConstraintContext ctx(
+            com.beduno.worker.Worker worker,
+            com.beduno.room.Room room,
+            com.beduno.property.Property property,
+            Bed bed,
+            UUID excludeStayId) {
         return new ConstraintContext(worker, room, property,
-                LocalDate.now(), LocalDate.now().plusDays(7), null);
+                LocalDate.now(), LocalDate.now().plusDays(7), excludeStayId, bed);
     }
 
     @Nested
@@ -62,7 +72,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -79,7 +88,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().status(PropertyStatus.INACTIVE).build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -96,7 +104,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -107,71 +114,71 @@ class ConstraintEngineTest {
     }
 
     @Nested
-    class CapacityConstraintTests {
+    class BedOccupancyConstraintTests {
 
         @Test
-        void shouldBlockOperation_whenRoomHasZeroAvailableSpots() {
-            var room = TestBuilders.aRoom().capacity(2).blockedSpots(2).build();
+        void shouldBeNoOp_whenBedIsNull() {
+            var room = TestBuilders.aRoom().build();
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            var result = engine.evaluate(ctx(worker, room, property));
-
-            assertThat(result.isAllowed()).isFalse();
-            assertThat(result.hardViolations())
-                    .extracting(HardViolation::type)
-                    .contains("CAPACITY_EXCEEDED");
-        }
-
-        @Test
-        void shouldBlockOperation_whenAllAvailableSpotsAreOccupied() {
-            var room = TestBuilders.aRoom().capacity(4).blockedSpots(2).build();
-            var worker = TestBuilders.aWorker().build();
-            var property = TestBuilders.aProperty().build();
-
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(2L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
-            assertThat(result.isAllowed()).isFalse();
-            assertThat(result.hardViolations())
-                    .extracting(HardViolation::type)
-                    .contains("CAPACITY_EXCEEDED");
+            assertThat(result.hardViolations()).noneMatch(v -> v.type().equals("BED_OCCUPIED"));
         }
 
         @Test
-        void shouldAllow_whenRoomHasAvailableSpots() {
-            var room = TestBuilders.aRoom().capacity(4).blockedSpots(0).build();
+        void shouldBlockOperation_whenBedIsAlreadyOccupied() {
+            var room = TestBuilders.aRoom().build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).build();
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(2L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(1L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
-            var result = engine.evaluate(ctx(worker, room, property));
+            var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
+            assertThat(result.isAllowed()).isFalse();
             assertThat(result.hardViolations())
-                    .noneMatch(v -> v.type().equals("CAPACITY_EXCEEDED"));
+                    .extracting(HardViolation::type)
+                    .contains("BED_OCCUPIED");
+        }
+
+        @Test
+        void shouldAllow_whenBedIsFree() {
+            var room = TestBuilders.aRoom().build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).build();
+            var worker = TestBuilders.aWorker().build();
+            var property = TestBuilders.aProperty().build();
+
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+
+            var result = engine.evaluate(ctx(worker, room, property, bed, null));
+
+            assertThat(result.hardViolations()).noneMatch(v -> v.type().equals("BED_OCCUPIED"));
         }
 
         @Test
         void shouldExcludeCurrentStay_whenUpdating() {
-            var room = TestBuilders.aRoom().capacity(1).blockedSpots(0).build();
+            var room = TestBuilders.aRoom().build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).build();
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
             var excludeId = UUID.randomUUID();
 
-            var ctxWithExclude = new ConstraintContext(worker, room, property,
-                    LocalDate.now(), LocalDate.now().plusDays(7), excludeId);
+            var ctxWithExclude = ctx(worker, room, property, bed, excludeId);
 
-            when(stayRepository.countActiveStaysInRoomExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBedExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
 
             var result = engine.evaluate(ctxWithExclude);
 
             assertThat(result.hardViolations())
-                    .noneMatch(v -> v.type().equals("CAPACITY_EXCEEDED"));
+                    .noneMatch(v -> v.type().equals("BED_OCCUPIED"));
         }
     }
 
@@ -184,7 +191,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(1L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -201,7 +207,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -217,10 +222,8 @@ class ConstraintEngineTest {
             var property = TestBuilders.aProperty().build();
             var excludeId = UUID.randomUUID();
 
-            var ctxWithExclude = new ConstraintContext(worker, room, property,
-                    LocalDate.now(), LocalDate.now().plusDays(7), excludeId);
+            var ctxWithExclude = ctx(worker, room, property, null, excludeId);
 
-            when(stayRepository.countActiveStaysInRoomExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
 
             var result = engine.evaluate(ctxWithExclude);
@@ -239,7 +242,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.MALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -257,7 +259,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -275,7 +276,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -289,7 +289,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.MALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -303,7 +302,6 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.OTHER).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
@@ -334,11 +332,10 @@ class ConstraintEngineTest {
 
         @Test
         void shouldReturnAllowed_whenNoViolations() {
-            var room = TestBuilders.aRoom().capacity(4).build();
+            var room = TestBuilders.aRoom().build();
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInRoom(any(), any(), any(), any(), anyList())).thenReturn(0L);
             when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));

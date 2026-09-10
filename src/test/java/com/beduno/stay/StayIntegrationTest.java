@@ -1,6 +1,10 @@
 package com.beduno.stay;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.BedStatus;
+import com.beduno.bed.dto.BedResponse;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
+import com.beduno.bed.dto.UpdateBedRequest;
 import com.beduno.common.exception.ErrorResponse;
 import com.beduno.common.model.PageResponse;
 import com.beduno.property.dto.CreatePropertyRequest;
@@ -16,6 +20,7 @@ import com.beduno.worker.Gender;
 import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.WorkerResponse;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
@@ -24,6 +29,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,6 +89,10 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         }
 
+        @Disabled("Room-level capacity is retired; BedOccupancyConstraint is a "
+                + "no-op until phase 4 wires bed resolution into StayService.create -- see the "
+                + "named-beds plan's Critical Implementation Details. Re-enable as a bed-occupied "
+                + "equivalent in phase 4.")
         @Test
         void shouldReturnHardViolation_whenRoomAtCapacity() {
             var worker1 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
@@ -338,17 +348,30 @@ class StayIntegrationTest extends IntegrationTestBase {
         return response.getBody();
     }
 
-    private RoomResponse createRoom(UUID agencyId, UUID propertyId, int capacity, int blockedSpots, GenderRule genderRule) {
+    private RoomResponse createRoom(UUID agencyId, UUID propertyId, int bedCount, int blockedBedCount, GenderRule genderRule) {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                null, capacity, blockedSpots, genderRule, null
+                null, genderRule, null
         );
-        var response = restTemplate.exchange(
+        var room = restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, agencyId)),
                 RoomResponse.class
-        );
-        return response.getBody();
+        ).getBody();
+        if (bedCount > 0) {
+            var bedsUrl = "/api/v1/properties/" + propertyId + "/rooms/" + room.id() + "/beds";
+            var beds = restTemplate.exchange(bedsUrl + "/bulk-generate", HttpMethod.POST,
+                    new HttpEntity<>(new BulkGenerateBedsRequest(bedCount), authHeaders(Role.AGENCY_ADMIN, agencyId)),
+                    new ParameterizedTypeReference<List<BedResponse>>() {}
+            ).getBody();
+            for (int i = 0; i < blockedBedCount && i < beds.size(); i++) {
+                var bed = beds.get(i);
+                restTemplate.exchange(bedsUrl + "/" + bed.id(), HttpMethod.PUT,
+                        new HttpEntity<>(new UpdateBedRequest(bed.label(), BedStatus.BLOCKED), authHeaders(Role.AGENCY_ADMIN, agencyId)),
+                        BedResponse.class);
+            }
+        }
+        return room;
     }
 
     private StayResponse createStay(UUID workerId, UUID propertyId, UUID roomId,

@@ -1,5 +1,7 @@
 package com.beduno;
 
+import com.beduno.bed.Bed;
+import com.beduno.bed.BedStatus;
 import com.beduno.common.model.BaseEntity;
 import com.beduno.property.Property;
 import com.beduno.property.PropertyStatus;
@@ -27,6 +29,10 @@ public final class TestBuilders {
 
     public static PropertyBuilder aProperty() {
         return new PropertyBuilder();
+    }
+
+    public static BedBuilder aBed() {
+        return new BedBuilder();
     }
 
     private static void setId(Object entity, UUID id) {
@@ -90,8 +96,6 @@ public final class TestBuilders {
         private UUID agencyId = IntegrationTestBase.DEFAULT_AGENCY_ID;
         private UUID propertyId = UUID.randomUUID();
         private String name = "Room 1";
-        private int capacity = 4;
-        private int blockedSpots = 0;
         private GenderRule genderRule = GenderRule.MIXED;
         private RoomStatus status = RoomStatus.ACTIVE;
 
@@ -102,16 +106,6 @@ public final class TestBuilders {
 
         public RoomBuilder agencyId(UUID agencyId) {
             this.agencyId = agencyId;
-            return this;
-        }
-
-        public RoomBuilder capacity(int capacity) {
-            this.capacity = capacity;
-            return this;
-        }
-
-        public RoomBuilder blockedSpots(int blockedSpots) {
-            this.blockedSpots = blockedSpots;
             return this;
         }
 
@@ -136,11 +130,52 @@ public final class TestBuilders {
             room.setAgencyId(agencyId);
             room.setPropertyId(propertyId);
             room.setRoomNumber(name);
-            room.setCapacity(capacity);
-            room.setBlockedSpots(blockedSpots);
             room.setGenderRule(genderRule);
             room.setStatus(status);
             return room;
+        }
+    }
+
+    public static class BedBuilder {
+        private UUID id = UUID.randomUUID();
+        private UUID agencyId = IntegrationTestBase.DEFAULT_AGENCY_ID;
+        private UUID roomId = UUID.randomUUID();
+        private String label = "1";
+        private BedStatus status = BedStatus.ACTIVE;
+
+        public BedBuilder id(UUID id) {
+            this.id = id;
+            return this;
+        }
+
+        public BedBuilder agencyId(UUID agencyId) {
+            this.agencyId = agencyId;
+            return this;
+        }
+
+        public BedBuilder roomId(UUID roomId) {
+            this.roomId = roomId;
+            return this;
+        }
+
+        public BedBuilder label(String label) {
+            this.label = label;
+            return this;
+        }
+
+        public BedBuilder status(BedStatus status) {
+            this.status = status;
+            return this;
+        }
+
+        public Bed build() {
+            var bed = new Bed();
+            setId(bed, id);
+            bed.setAgencyId(agencyId);
+            bed.setRoomId(roomId);
+            bed.setLabel(label);
+            bed.setStatus(status);
+            return bed;
         }
     }
 

@@ -1,5 +1,8 @@
 package com.beduno.occupancy;
 
+import com.beduno.bed.Bed;
+import com.beduno.bed.BedRepository;
+import com.beduno.bed.BedStatus;
 import com.beduno.common.security.TenantContext;
 import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
@@ -11,6 +14,7 @@ import com.beduno.occupancy.dto.RoomDiscrepancy;
 import com.beduno.occupancy.dto.RoomOccupancyResponse;
 import com.beduno.occupancy.dto.WorkerDiscrepancy;
 import com.beduno.property.PropertyRepository;
+import com.beduno.room.Room;
 import com.beduno.room.RoomRepository;
 import com.beduno.stay.Stay;
 import com.beduno.stay.StayRepository;
@@ -40,6 +44,7 @@ public class OccupancyService {
     private final RoomRepository roomRepository;
     private final WorkerRepository workerRepository;
     private final PropertyRepository propertyRepository;
+    private final BedRepository bedRepository;
 
     @Transactional(readOnly = true)
     public List<RoomOccupancyResponse> getOccupancy(UUID propertyId, LocalDate date) {
@@ -47,18 +52,20 @@ public class OccupancyService {
         var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
         var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, CHECKED_IN_STATUS);
         var workerMap = loadWorkers(stays, agencyId);
+        var bedCounts = bedCountsByRoom(agencyId, rooms);
 
         var staysByRoom = stays.stream().collect(Collectors.groupingBy(Stay::getRoomId));
 
         return rooms.stream().map(room -> {
             var roomStays = staysByRoom.getOrDefault(room.getId(), List.of());
             var occupants = toOccupantSummaries(roomStays, workerMap);
+            var counts = bedCounts.getOrDefault(room.getId(), BedCounts.EMPTY);
             return new RoomOccupancyResponse(
                     room.getId(),
                     room.getRoomNumber(),
                     room.getFloor(),
-                    room.getCapacity(),
-                    room.getBlockedSpots(),
+                    counts.total(),
+                    counts.active(),
                     occupants.size(),
                     occupants
             );
@@ -71,6 +78,7 @@ public class OccupancyService {
         var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
         var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, ACTIVE_STATUSES);
         var workerMap = loadWorkers(stays, agencyId);
+        var bedCounts = bedCountsByRoom(agencyId, rooms);
 
         var checkedInByRoom = stays.stream()
                 .filter(s -> s.getStatus() == StayStatus.CHECKED_IN)
@@ -83,17 +91,21 @@ public class OccupancyService {
         for (var room : rooms) {
             var checkedIn = checkedInByRoom.getOrDefault(room.getId(), List.of());
             var expected = expectedByRoom.getOrDefault(room.getId(), List.of());
+            var counts = bedCounts.getOrDefault(room.getId(), BedCounts.EMPTY);
 
-            if (checkedIn.size() > room.availableSpots()) {
+            // A data-integrity safety net over historical/backfilled data, not the live guard --
+            // going forward BedOccupancyConstraint (phase 2) and the bed-blocked check (phase 3)
+            // prevent new violations at write time once phase 4 wires bed resolution in.
+            if (checkedIn.size() > counts.active()) {
                 exceptions.add(new OccupancyExceptionResponse(
                         room.getId(), room.getRoomNumber(), "OVER_CAPACITY",
-                        room.getCapacity(), room.getBlockedSpots(), checkedIn.size(),
+                        counts.total(), counts.active(), checkedIn.size(),
                         toOccupantSummaries(checkedIn, workerMap)
                 ));
             } else if (!expected.isEmpty()) {
                 exceptions.add(new OccupancyExceptionResponse(
                         room.getId(), room.getRoomNumber(), "PENDING_ARRIVAL",
-                        room.getCapacity(), room.getBlockedSpots(), checkedIn.size(),
+                        counts.total(), counts.active(), checkedIn.size(),
                         toOccupantSummaries(expected, workerMap)
                 ));
             }
@@ -187,5 +199,29 @@ public class OccupancyService {
                     w != null ? w.getLastName() : null
             );
         }).toList();
+    }
+
+    /**
+     * Loaded once per request for the whole property rather than per room, matching how stays and
+     * workers are already batched above.
+     */
+    private Map<UUID, BedCounts> bedCountsByRoom(UUID agencyId, List<Room> rooms) {
+        if (rooms.isEmpty()) {
+            return Map.of();
+        }
+        var roomIds = rooms.stream().map(Room::getId).collect(Collectors.toSet());
+        return bedRepository.findAllByAgencyIdAndRoomIdIn(agencyId, roomIds).stream()
+                .collect(Collectors.groupingBy(Bed::getRoomId,
+                        Collectors.collectingAndThen(Collectors.toList(), BedCounts::of)));
+    }
+
+    /** total beds vs. beds not blocked -- the direct translation of the old capacity/blockedSpots pair. */
+    private record BedCounts(int total, int active) {
+        static final BedCounts EMPTY = new BedCounts(0, 0);
+
+        static BedCounts of(List<Bed> beds) {
+            var active = (int) beds.stream().filter(b -> b.getStatus() == BedStatus.ACTIVE).count();
+            return new BedCounts(beds.size(), active);
+        }
     }
 }

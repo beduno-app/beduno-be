@@ -586,10 +586,12 @@ Rooms are identified by **`roomNumber`** (a string, unique per property — `"10
 
 > This reverses what this document said before 10 Sep 2026, when it recorded the backend's own naming (`name`, a string `floor`, gender rule `ANY`). That naming had diverged from the frontend contract the client was built against; the contract won. See `V9__room_contract_alignment.sql`.
 
+> **11 Sep 2026:** `capacity`, `blockedSpots` and `availableSpots` are gone from every room request and response. A room's bed inventory (`GET .../beds`, `named-beds` change) is now the only source of truth for how many spots it has and which are blocked; `RoomResponse` reports `bedCount` and `availableBedCount` instead. See `V10`-`V13` and `context/changes/named-beds/plan.md`. This is another deliberate, documented contract break, same precedent as `V9`.
+
 ### GET /api/v1/properties/{propertyId}/rooms
 **Query params:** `?page=0&size=50&sort=name,asc`
 
-There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`roomNumber`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
+There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`roomNumber`, `floor`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
 
 **Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
 
@@ -608,8 +610,6 @@ There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` 
 {
   "roomNumber": "12",
   "floor": 2,
-  "capacity": 4,
-  "blockedSpots": 1,
   "genderRule": "MALE_ONLY",
   "notes": "Corner room, good ventilation"
 }
@@ -619,18 +619,14 @@ There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` 
 |-------|----------|-----------|
 | `name` | yes | `@NotBlank @Size(max=100)`, unique within the property |
 | `floor` | no | `@Size(max=50)`, **string** |
-| `capacity` | yes in practice | primitive `int` with `@Min(1)` — omitting it sends `0`, which fails validation with 400 |
-| `blockedSpots` | no | primitive `int` with `@Min(0)` — omitting it yields `0` and is accepted |
 | `genderRule` | no | defaults to `ANY` when omitted |
 | `notes` | no | free text |
 
-Status is always `ACTIVE` on create.
+Status is always `ACTIVE` on create. A freshly created room has no beds — generate them via `POST .../beds/bulk-generate` (see the Beds section) before it can hold any stay.
 
 **Response 201:** `RoomResponse` (no `Location` header)
 
 **Response 409:** `error.room.number_exists` — another room in this property already has that number
-
-**Response 400:** `error.room.blocked_spots_exceed_capacity` (a `ValidationException`, so `details` is absent) when `blockedSpots > capacity`
 
 ### PUT /api/v1/properties/{propertyId}/rooms/{roomId}
 **Full replace.** `genderRule` and `status` are both `@NotNull` and required.
@@ -642,15 +638,13 @@ Status is always `ACTIVE` on create.
 {
   "roomNumber": "12",
   "floor": 2,
-  "capacity": 4,
-  "blockedSpots": 0,
   "genderRule": "ANY",
   "status": "ACTIVE",
   "notes": null
 }
 ```
 
-**Response 200:** `RoomResponse` · **409:** `error.room.number_exists` (only when the number actually changes) · **400:** `error.room.blocked_spots_exceed_capacity`
+**Response 200:** `RoomResponse` · **409:** `error.room.number_exists` (only when the number actually changes)
 
 Setting `status: BLOCKED` makes the constraint engine reject any new or moved stay into this room with a hard `ROOM_BLOCKED` violation. It does not evict existing occupants.
 
@@ -670,17 +664,26 @@ Setting `status: BLOCKED` makes the constraint engine reject any new or moved st
   "propertyId": "uuid",
   "roomNumber": "12",
   "floor": 2,
-  "capacity": 4,
-  "blockedSpots": 1,
-  "availableSpots": 3,
+  "bedCount": 4,
+  "availableBedCount": 3,
   "genderRule": "MALE_ONLY",
   "status": "ACTIVE",
   "notes": "Corner room, good ventilation",
+  "currentOccupancy": 1,
+  "occupants": [
+    {
+      "stayId": "uuid",
+      "worker": {"id": "uuid", "internalId": "W-001", "firstName": "Jan", "lastName": "Kowalski", "gender": "MALE"},
+      "dateFrom": "2026-04-01",
+      "dateTo": "2026-04-14",
+      "status": "CHECKED_IN"
+    }
+  ],
   "createdAt": "2026-04-01T08:00:00Z",
   "updatedAt": "2026-04-14T10:00:00Z"
 }
 ```
-`availableSpots` is computed as `capacity - blockedSpots` — it is **static bed inventory, not live vacancy**; it does not subtract current occupants. There is no `currentOccupancy` and no `occupants[]`; use `GET /properties/{id}/occupancy` for that.
+`bedCount` is the room's total bed count; `availableBedCount` is ACTIVE beds less `currentOccupancy` — the live vacancy the client uses as its placement gate. This is now the only "available" number the API reports for a room (see the 11 Sep 2026 changelog note above); it replaces both the old static `capacity - blockedSpots` and the separately-recomputed occupancy-aware value that used to disagree with it.
 
 ---
 

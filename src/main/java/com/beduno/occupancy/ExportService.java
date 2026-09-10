@@ -29,8 +29,8 @@ public class ExportService {
                 sb.append(csvRow(
                         room.roomNumber(),
                         blankIfNull(room.floor()),
-                        String.valueOf(room.capacity()),
-                        String.valueOf(room.blockedSpots()),
+                        String.valueOf(room.bedCount()),
+                        String.valueOf(room.availableBedCount()),
                         "0",
                         "", "", ""
                 )).append("\n");
@@ -39,8 +39,8 @@ public class ExportService {
                     sb.append(csvRow(
                             room.roomNumber(),
                             blankIfNull(room.floor()),
-                            String.valueOf(room.capacity()),
-                            String.valueOf(room.blockedSpots()),
+                            String.valueOf(room.bedCount()),
+                            String.valueOf(room.availableBedCount()),
                             String.valueOf(room.occupiedSpots()),
                             occupant.workerId().toString(),
                             blankIfNull(occupant.firstName()),
@@ -83,8 +83,8 @@ public class ExportService {
                 sb.append(csvRow(
                         ex.roomNumber(),
                         exLabel,
-                        String.valueOf(ex.capacity()),
-                        String.valueOf(ex.blockedSpots()),
+                        String.valueOf(ex.bedCount()),
+                        String.valueOf(ex.availableBedCount()),
                         String.valueOf(ex.occupiedSpots()),
                         "", "", ""
                 )).append("\n");
@@ -93,8 +93,8 @@ public class ExportService {
                     sb.append(csvRow(
                             ex.roomNumber(),
                             exLabel,
-                            String.valueOf(ex.capacity()),
-                            String.valueOf(ex.blockedSpots()),
+                            String.valueOf(ex.bedCount()),
+                            String.valueOf(ex.availableBedCount()),
                             String.valueOf(ex.occupiedSpots()),
                             occupant.workerId().toString(),
                             blankIfNull(occupant.firstName()),

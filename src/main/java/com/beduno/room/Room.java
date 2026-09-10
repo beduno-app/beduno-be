@@ -29,12 +29,6 @@ public class Room extends BaseEntity {
     @Column
     private Integer floor;
 
-    @Column(nullable = false)
-    private int capacity = 1;
-
-    @Column(name = "blocked_spots", nullable = false)
-    private int blockedSpots = 0;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "gender_rule", nullable = false)
     private GenderRule genderRule = GenderRule.MIXED;
@@ -45,8 +39,4 @@ public class Room extends BaseEntity {
 
     @Column
     private String notes;
-
-    public int availableSpots() {
-        return capacity - blockedSpots;
-    }
 }

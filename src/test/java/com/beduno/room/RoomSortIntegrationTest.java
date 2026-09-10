@@ -44,7 +44,7 @@ class RoomSortIntegrationTest extends IntegrationTestBase {
     }
 
     private void createRoom(String name) {
-        var request = new CreateRoomRequest(name, 1, 4, 0, GenderRule.MIXED, null);
+        var request = new CreateRoomRequest(name, 1, GenderRule.MIXED, null);
         var response = restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), RoomResponse.class);

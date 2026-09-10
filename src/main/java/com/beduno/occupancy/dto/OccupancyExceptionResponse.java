@@ -7,8 +7,8 @@ public record OccupancyExceptionResponse(
         UUID roomId,
         String roomNumber,
         String exceptionType,
-        int capacity,
-        int blockedSpots,
+        int bedCount,
+        int availableBedCount,
         int occupiedSpots,
         List<OccupantSummary> occupants
 ) {

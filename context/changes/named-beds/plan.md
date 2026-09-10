@@ -499,27 +499,27 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 1.1 Compiles: `./gradlew compileJava`
-- [x] 1.2 Bed module tests pass: `./gradlew test --tests 'com.beduno.bed.*'`
-- [x] 1.3 Full build green: `./gradlew build`
-- [x] 1.4 Message bundles complete (MessageBundleTest passes)
+- [x] 1.1 Compiles: `./gradlew compileJava` — 17f7dfb
+- [x] 1.2 Bed module tests pass: `./gradlew test --tests 'com.beduno.bed.*'` — 17f7dfb
+- [x] 1.3 Full build green: `./gradlew build` — 17f7dfb
+- [x] 1.4 Message bundles complete (MessageBundleTest passes) — 17f7dfb
 
 #### Manual
 
-- [ ] 1.5 Bulk-generate beds on a fresh room via the API and confirm sequential labels
-- [ ] 1.6 Rename a bed and confirm the next bulk-generate doesn't collide with the renamed label
-- [ ] 1.7 Block a bed via the API and confirm its status is visible on read
+- [x] 1.5 Bulk-generate beds on a fresh room via the API and confirm sequential labels — 17f7dfb
+- [x] 1.6 Rename a bed and confirm the next bulk-generate doesn't collide with the renamed label — 17f7dfb
+- [x] 1.7 Block a bed via the API and confirm its status is visible on read — 17f7dfb
 
 ### Phase 2: Stay schema migration, backfill, capacity retirement, and bed-occupancy constraint
 
 #### Automated
 
-- [ ] 2.1 Compiles: `./gradlew compileJava`
-- [ ] 2.2 Room module tests pass: `./gradlew test --tests 'com.beduno.room.*'`
-- [ ] 2.3 Constraint engine tests pass (bed-occupied + null-bed no-op cases)
-- [ ] 2.4 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
-- [ ] 2.5 Full build green, migrations V10-V13 apply cleanly: `./gradlew build`
-- [ ] 2.6 No remaining capacity/blockedSpots usage across room/occupancy/stay-constraint source
+- [x] 2.1 Compiles: `./gradlew compileJava`
+- [x] 2.2 Room module tests pass: `./gradlew test --tests 'com.beduno.room.*'`
+- [x] 2.3 Constraint engine tests pass (bed-occupied + null-bed no-op cases)
+- [x] 2.4 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
+- [x] 2.5 Full build green, migrations V10-V13 apply cleanly: `./gradlew build`
+- [x] 2.6 No remaining capacity/blockedSpots usage across room/occupancy/stay-constraint source
 
 #### Manual
 

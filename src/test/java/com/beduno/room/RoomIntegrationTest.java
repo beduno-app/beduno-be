@@ -34,7 +34,7 @@ class RoomIntegrationTest extends IntegrationTestBase {
         @Test
         void shouldCreateRoom_whenAgencyAdmin() {
             var property = createProperty(DEFAULT_AGENCY_ID);
-            var request = new CreateRoomRequest("Room 101", 1, 4, 0, GenderRule.MIXED, null);
+            var request = new CreateRoomRequest("Room 101", 1, GenderRule.MIXED, null);
             var headers = authHeaders(Role.AGENCY_ADMIN);
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
@@ -42,15 +42,15 @@ class RoomIntegrationTest extends IntegrationTestBase {
             );
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
             assertThat(response.getBody().roomNumber()).isEqualTo("Room 101");
-            assertThat(response.getBody().capacity()).isEqualTo(4);
-            assertThat(response.getBody().availableSpots()).isEqualTo(4);
+            assertThat(response.getBody().bedCount()).isZero();
+            assertThat(response.getBody().availableBedCount()).isZero();
         }
 
         @Test
         void shouldCreateRoom_whenPropertyAdminWithAccess() {
             var property = createProperty(DEFAULT_AGENCY_ID);
             var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{property.id()});
-            var request = new CreateRoomRequest("Room PA", 1, 2, 0, GenderRule.FEMALE_ONLY, null);
+            var request = new CreateRoomRequest("Room PA", 1, GenderRule.FEMALE_ONLY, null);
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                     new HttpEntity<>(request, headers), RoomResponse.class
@@ -62,7 +62,7 @@ class RoomIntegrationTest extends IntegrationTestBase {
         void shouldRejectCreate_whenPropertyAdminWithoutAccess() {
             var property = createProperty(DEFAULT_AGENCY_ID);
             var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{UUID.randomUUID()});
-            var request = new CreateRoomRequest("Room Nope", 1, 2, 0, null, null);
+            var request = new CreateRoomRequest("Room Nope", 1, null, null);
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                     new HttpEntity<>(request, headers), String.class
@@ -74,7 +74,7 @@ class RoomIntegrationTest extends IntegrationTestBase {
         void shouldRejectDuplicateRoomName() {
             var property = createProperty(DEFAULT_AGENCY_ID);
             var headers = authHeaders(Role.AGENCY_ADMIN);
-            var request = new CreateRoomRequest("Duplicate", 1, 2, 0, GenderRule.MIXED, null);
+            var request = new CreateRoomRequest("Duplicate", 1, GenderRule.MIXED, null);
 
             restTemplate.exchange("/api/v1/properties/" + property.id() + "/rooms",
                     HttpMethod.POST, new HttpEntity<>(request, headers), RoomResponse.class);
@@ -82,18 +82,6 @@ class RoomIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange("/api/v1/properties/" + property.id() + "/rooms",
                     HttpMethod.POST, new HttpEntity<>(request, headers), String.class);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        }
-
-        @Test
-        void shouldRejectBlockedSpotsExceedingCapacity() {
-            var property = createProperty(DEFAULT_AGENCY_ID);
-            var headers = authHeaders(Role.AGENCY_ADMIN);
-            var request = new CreateRoomRequest("Bad Room", 1, 2, 5, GenderRule.MIXED, null);
-            var response = restTemplate.exchange(
-                    "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
-                    new HttpEntity<>(request, headers), String.class
-            );
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -170,16 +158,14 @@ class RoomIntegrationTest extends IntegrationTestBase {
             var room = createRoom(DEFAULT_AGENCY_ID, property.id());
             var headers = authHeaders(Role.AGENCY_ADMIN);
             var updateRequest = new UpdateRoomRequest(
-                    room.roomNumber(), 2, 6, 1, GenderRule.MALE_ONLY, RoomStatus.ACTIVE, "updated"
+                    room.roomNumber(), 2, GenderRule.MALE_ONLY, RoomStatus.ACTIVE, "updated"
             );
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/rooms/" + room.id(),
                     HttpMethod.PUT, new HttpEntity<>(updateRequest, headers), RoomResponse.class
             );
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(response.getBody().capacity()).isEqualTo(6);
-            assertThat(response.getBody().blockedSpots()).isEqualTo(1);
-            assertThat(response.getBody().availableSpots()).isEqualTo(5);
+            assertThat(response.getBody().floor()).isEqualTo(2);
             assertThat(response.getBody().genderRule()).isEqualTo(GenderRule.MALE_ONLY);
         }
     }
@@ -194,7 +180,7 @@ class RoomIntegrationTest extends IntegrationTestBase {
     }
 
     private RoomResponse createRoom(UUID agencyId, UUID propertyId) {
-        var request = new CreateRoomRequest("Room " + UUID.randomUUID().toString().substring(0, 8), 1, 4, 0, GenderRule.MIXED, null);
+        var request = new CreateRoomRequest("Room " + UUID.randomUUID().toString().substring(0, 8), 1, GenderRule.MIXED, null);
         var headers = authHeaders(Role.AGENCY_ADMIN, agencyId);
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,

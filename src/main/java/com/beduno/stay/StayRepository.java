@@ -88,6 +88,40 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("excludeId") UUID excludeId
     );
 
+    @Query("""
+            SELECT COUNT(s) FROM Stay s
+            WHERE s.bedId = :bedId
+              AND s.agencyId = :agencyId
+              AND s.status IN :statuses
+              AND s.dateFrom < :effectiveDateTo
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+            """)
+    long countActiveStaysInBed(
+            @Param("bedId") UUID bedId,
+            @Param("agencyId") UUID agencyId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("statuses") List<StayStatus> statuses
+    );
+
+    @Query("""
+            SELECT COUNT(s) FROM Stay s
+            WHERE s.bedId = :bedId
+              AND s.agencyId = :agencyId
+              AND s.status IN :statuses
+              AND s.dateFrom < :effectiveDateTo
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+              AND s.id <> :excludeId
+            """)
+    long countActiveStaysInBedExcluding(
+            @Param("bedId") UUID bedId,
+            @Param("agencyId") UUID agencyId,
+            @Param("dateFrom") LocalDate dateFrom,
+            @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("statuses") List<StayStatus> statuses,
+            @Param("excludeId") UUID excludeId
+    );
+
     @Query("SELECT s FROM Stay s WHERE s.status = com.beduno.stay.StayStatus.PLANNED AND s.dateFrom = :date")
     List<Stay> findPlannedArrivingOn(@Param("date") LocalDate date);
 

@@ -1,6 +1,10 @@
 package com.beduno.room;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.BedStatus;
+import com.beduno.bed.dto.BedResponse;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
+import com.beduno.bed.dto.UpdateBedRequest;
 import com.beduno.common.model.PageResponse;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
@@ -104,14 +108,14 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
     }
 
     /**
-     * The spec's own example: capacity 4, blockedSpots 1, currentOccupancy 2 -> availableSpots 1.
-     * The client uses this as its placement gate, so counting only blocked spots showed a full
-     * room as having space and invited a placement the server would then refuse.
+     * bedCount 4, one bed blocked, currentOccupancy 2 -> availableBedCount 1. The client uses this
+     * as its placement gate, so counting only blocked beds showed a full room as having space and
+     * invited a placement the server would then refuse.
      */
     @Test
-    void shouldSubtractOccupancyFromAvailableSpots() {
-        var blocked = createRoomWithBlocked("202", 4, 1);
-        assertThat(blocked.availableSpots()).isEqualTo(3);
+    void shouldSubtractOccupancyFromAvailableBedCount() {
+        var blocked = createRoomWithBeds("202", 4, 1);
+        assertThat(blocked.availableBedCount()).isEqualTo(3);
 
         room = blocked;
         checkIn(createWorker("Ewa", "Lis").id());
@@ -119,16 +123,16 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
 
         var fetched = getRoom();
         assertThat(fetched.currentOccupancy()).isEqualTo(2);
-        assertThat(fetched.availableSpots()).isEqualTo(1);
+        assertThat(fetched.availableBedCount()).isEqualTo(1);
     }
 
     @Test
-    void shouldNeverReportNegativeAvailableSpots() {
-        var tiny = createRoomWithBlocked("203", 1, 0);
+    void shouldNeverReportNegativeAvailableBedCount() {
+        var tiny = createRoomWithBeds("203", 1, 0);
         room = tiny;
         checkIn(createWorker("Zof", "Mak").id());
 
-        assertThat(getRoom().availableSpots()).isZero();
+        assertThat(getRoom().availableBedCount()).isZero();
     }
 
     /** The client types occupants as an array; a null is not one. */
@@ -140,13 +144,27 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
         assertThat(created.currentOccupancy()).isZero();
     }
 
-    private RoomResponse createRoomWithBlocked(String roomNumber, int capacity, int blockedSpots) {
-        var request = new CreateRoomRequest(roomNumber, 1, capacity, blockedSpots,
-                GenderRule.MIXED, null);
-        return restTemplate.exchange(
+    private RoomResponse createRoomWithBeds(String roomNumber, int bedCount, int blockedBedCount) {
+        var request = new CreateRoomRequest(roomNumber, 1, GenderRule.MIXED, null);
+        var created = restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
                 RoomResponse.class).getBody();
+
+        var bedsUrl = "/api/v1/properties/" + property.id() + "/rooms/" + created.id() + "/beds";
+        var beds = restTemplate.exchange(bedsUrl + "/bulk-generate", HttpMethod.POST,
+                new HttpEntity<>(new BulkGenerateBedsRequest(bedCount), authHeaders(Role.AGENCY_ADMIN)),
+                new ParameterizedTypeReference<List<BedResponse>>() {}).getBody();
+        for (int i = 0; i < blockedBedCount && i < beds.size(); i++) {
+            var bed = beds.get(i);
+            restTemplate.exchange(bedsUrl + "/" + bed.id(), HttpMethod.PUT,
+                    new HttpEntity<>(new UpdateBedRequest(bed.label(), BedStatus.BLOCKED), authHeaders(Role.AGENCY_ADMIN)),
+                    BedResponse.class);
+        }
+
+        return restTemplate.exchange(
+                "/api/v1/properties/" + property.id() + "/rooms/" + created.id(), HttpMethod.GET,
+                new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), RoomResponse.class).getBody();
     }
 
     private RoomResponse getRoom() {
@@ -190,7 +208,7 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
     }
 
     private RoomResponse createRoom(String roomNumber) {
-        var request = new CreateRoomRequest(roomNumber, 1, 4, 0, GenderRule.MIXED, null);
+        var request = new CreateRoomRequest(roomNumber, 1, GenderRule.MIXED, null);
         return restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),

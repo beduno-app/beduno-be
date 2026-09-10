@@ -124,7 +124,7 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
     private RoomResponse createRoom(UUID propertyId) {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                null, 4, 0, GenderRule.MIXED, null);
+                null, GenderRule.MIXED, null);
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),

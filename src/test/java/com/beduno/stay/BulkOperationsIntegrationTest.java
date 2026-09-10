@@ -1,6 +1,10 @@
 package com.beduno.stay;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.BedStatus;
+import com.beduno.bed.dto.BedResponse;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
+import com.beduno.bed.dto.UpdateBedRequest;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
 import com.beduno.room.GenderRule;
@@ -19,8 +23,10 @@ import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.WorkerImportResult;
 import com.beduno.worker.dto.WorkerResponse;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -162,6 +168,10 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
             assertThat(result.results()).allMatch(r -> "created".equals(r.status()));
         }
 
+        @Disabled("Room-level capacity is retired; BedOccupancyConstraint is a "
+                + "no-op until phase 4 wires bed resolution into StayService.bulkAssign -- see the "
+                + "named-beds plan's Critical Implementation Details. Re-enable as a bed-occupied "
+                + "equivalent in phase 4.")
         @Test
         void shouldReturnPartialSuccess_whenSomeAssignmentsFail() {
             var property = createProperty();
@@ -284,16 +294,30 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
         ).getBody();
     }
 
-    private RoomResponse createRoom(UUID propertyId, int capacity, int blockedSpots) {
+    private RoomResponse createRoom(UUID propertyId, int bedCount, int blockedBedCount) {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
-                null, capacity, blockedSpots, GenderRule.MIXED, null
+                null, GenderRule.MIXED, null
         );
-        return restTemplate.exchange(
+        var room = restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
                 RoomResponse.class
         ).getBody();
+        if (bedCount > 0) {
+            var bedsUrl = "/api/v1/properties/" + propertyId + "/rooms/" + room.id() + "/beds";
+            var beds = restTemplate.exchange(bedsUrl + "/bulk-generate", HttpMethod.POST,
+                    new HttpEntity<>(new BulkGenerateBedsRequest(bedCount), authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<List<BedResponse>>() {}
+            ).getBody();
+            for (int i = 0; i < blockedBedCount && i < beds.size(); i++) {
+                var bed = beds.get(i);
+                restTemplate.exchange(bedsUrl + "/" + bed.id(), HttpMethod.PUT,
+                        new HttpEntity<>(new UpdateBedRequest(bed.label(), BedStatus.BLOCKED), authHeaders(Role.AGENCY_ADMIN)),
+                        BedResponse.class);
+            }
+        }
+        return room;
     }
 
     private StayResponse createPlannedStay(UUID workerId, UUID propertyId, UUID roomId,

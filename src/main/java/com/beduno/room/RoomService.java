@@ -3,6 +3,9 @@ package com.beduno.room;
 import java.util.stream.Collectors;
 import java.util.List;
 import java.time.LocalDate;
+import com.beduno.bed.Bed;
+import com.beduno.bed.BedRepository;
+import com.beduno.bed.BedStatus;
 import com.beduno.worker.WorkerRepository;
 import com.beduno.worker.Worker;
 import com.beduno.stay.StayStatus;
@@ -14,7 +17,6 @@ import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
-import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
@@ -31,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -44,8 +47,6 @@ public class RoomService {
     private static final Map<String, String> SORTABLE = Map.of(
             "roomNumber", "roomNumber",
             "floor", "floor",
-            "capacity", "capacity",
-            "blockedSpots", "blockedSpots",
             "genderRule", "genderRule",
             "status", "status",
             "createdAt", "createdAt",
@@ -57,6 +58,7 @@ public class RoomService {
     private final AuditService auditService;
     private final StayRepository stayRepository;
     private final WorkerRepository workerRepository;
+    private final BedRepository bedRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
@@ -65,13 +67,17 @@ public class RoomService {
         var page = roomRepository.findAllByAgencyIdAndPropertyId(
                 agencyId, propertyId, SortFields.translate(pageable, SORTABLE));
         var occupants = occupantsByRoom(agencyId, propertyId);
-        return PageResponse.of(page.map(room -> withOccupants(room, occupants)));
+        var roomIds = page.getContent().stream().map(Room::getId).collect(Collectors.toSet());
+        var beds = bedsByRoom(agencyId, roomIds);
+        return PageResponse.of(page.map(room -> withOccupants(room, beds, occupants)));
     }
 
     @Transactional(readOnly = true)
     public RoomResponse findById(UUID propertyId, UUID roomId) {
         var room = getRoomOrThrow(propertyId, roomId);
-        return withOccupants(room, occupantsByRoom(TenantContext.requireAgencyId(), propertyId));
+        var agencyId = TenantContext.requireAgencyId();
+        var beds = bedsByRoom(agencyId, Set.of(roomId));
+        return withOccupants(room, beds, occupantsByRoom(agencyId, propertyId));
     }
 
     @Transactional
@@ -83,28 +89,20 @@ public class RoomService {
             throw new ConflictException("error.room.number_exists");
         }
 
-        if (request.blockedSpots() > request.capacity()) {
-            throw new ValidationException("error.room.blocked_spots_exceed_capacity");
-        }
-
         var room = roomMapper.toEntity(request);
         room.setAgencyId(agencyId);
         room.setPropertyId(propertyId);
         room = roomRepository.save(room);
         auditService.log(agencyId, currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.CREATED, null, snapshot(room), null);
-        // A room that was just created has no stays, but the field must still be an empty list:
-        // the client types occupants as an array and a null is not one.
-        return roomMapper.toResponse(room).withOccupancy(0, List.of());
+        // A room that was just created has no beds and no stays, but occupants must still be an
+        // empty list: the client types it as an array and a null is not one.
+        return roomMapper.toResponse(room).withOccupancy(0, 0, 0, List.of());
     }
 
     @Transactional
     public RoomResponse update(UUID propertyId, UUID roomId, UpdateRoomRequest request) {
         var room = getRoomOrThrow(propertyId, roomId);
-
-        if (request.blockedSpots() > request.capacity()) {
-            throw new ValidationException("error.room.blocked_spots_exceed_capacity");
-        }
 
         if (!room.getRoomNumber().equals(request.roomNumber()) && roomRepository.existsByPropertyIdAndRoomNumber(propertyId, request.roomNumber())) {
             throw new ConflictException("error.room.number_exists");
@@ -115,9 +113,11 @@ public class RoomService {
         room = roomRepository.save(room);
         auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.UPDATED, previous, snapshot(room), null);
-        // Unlike create, an existing room can be occupied, so this reads the real occupancy
-        // rather than assuming zero -- editing a room must not blank out who is in it.
-        return withOccupants(room, occupantsByRoom(room.getAgencyId(), propertyId));
+        // Unlike create, an existing room can already have beds and occupants, so this reads the
+        // real counts rather than assuming zero -- editing a room must not blank either one out.
+        var agencyId = room.getAgencyId();
+        var beds = bedsByRoom(agencyId, Set.of(roomId));
+        return withOccupants(room, beds, occupantsByRoom(agencyId, propertyId));
     }
 
     @Transactional
@@ -178,17 +178,31 @@ public class RoomService {
                         Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
     }
 
-    private RoomResponse withOccupants(Room room, Map<UUID, List<RoomOccupant>> occupantsByRoom) {
+    /**
+     * Loaded once per request for the room(s) at hand, mirroring occupantsByRoom's batching: a
+     * page of rooms issues one beds query rather than one per room.
+     */
+    private Map<UUID, List<Bed>> bedsByRoom(UUID agencyId, Set<UUID> roomIds) {
+        if (roomIds.isEmpty()) {
+            return Map.of();
+        }
+        return bedRepository.findAllByAgencyIdAndRoomIdIn(agencyId, roomIds).stream()
+                .collect(Collectors.groupingBy(Bed::getRoomId));
+    }
+
+    private RoomResponse withOccupants(Room room, Map<UUID, List<Bed>> bedsByRoom,
+                                        Map<UUID, List<RoomOccupant>> occupantsByRoom) {
+        var beds = bedsByRoom.getOrDefault(room.getId(), List.of());
+        var activeBedCount = (int) beds.stream().filter(b -> b.getStatus() == BedStatus.ACTIVE).count();
         var occupants = occupantsByRoom.getOrDefault(room.getId(), List.of());
-        return roomMapper.toResponse(room).withOccupancy(occupants.size(), occupants);
+        return roomMapper.toResponse(room)
+                .withOccupancy(beds.size(), activeBedCount, occupants.size(), occupants);
     }
 
     private Map<String, Object> snapshot(Room room) {
         var map = new LinkedHashMap<String, Object>();
         map.put("roomNumber", room.getRoomNumber());
         map.put("status", room.getStatus().name());
-        map.put("capacity", room.getCapacity());
-        map.put("blockedSpots", room.getBlockedSpots());
         map.put("genderRule", room.getGenderRule().name());
         return map;
     }

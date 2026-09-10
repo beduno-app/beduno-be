@@ -7,8 +7,8 @@ public record RoomOccupancyResponse(
         UUID roomId,
         String roomNumber,
         Integer floor,
-        int capacity,
-        int blockedSpots,
+        int bedCount,
+        int availableBedCount,
         int occupiedSpots,
         List<OccupantSummary> occupants
 ) {
