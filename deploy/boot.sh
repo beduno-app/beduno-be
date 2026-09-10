@@ -49,16 +49,27 @@ if [ "$duckdns_result" != "OK" ]; then
   exit 1
 fi
 
-# docker compose interpolates variable references in an env file, so a value containing a dollar
-# sign is silently truncated at that point: BOOTSTRAP_ADMIN_PASSWORD=Adm1n$ecret reaches the
-# container as "Adm1n". Doubling the dollar is compose's escape for a literal one. This bites the
-# admin password hardest -- the bootstrap runs once on an empty database and there is no
-# user-management API, so a mangled password locks the deployment out of its own admin account.
-# Verified against compose v2: '$' and "'" and '#' all round-trip with this escaping.
-esc() { printf '%s' "$1" | sed 's/\$/$$/g'; }
+# compose's env-file parser mangles unquoted values in four separate ways, each of which silently
+# produces a different secret than the one stored. Verified against compose v2:
+#
+#   Adm1n$ecret             -> Adm1n            ($ starts an interpolation)
+#   correct horse #battery  -> correct horse    (" #" starts an inline comment)
+#   trailing<spaces>        -> trailing         (trailing whitespace is trimmed)
+#   'quoted-looking         -> parse failure    (a leading quote opens a quoted value)
+#
+# This matters most for the admin password: the bootstrap runs once on an empty database and
+# there is no user-management API, so a mangled password locks the deployment out of its own
+# administrator account with no way back except editing Postgres by hand.
+#
+# Double-quoting the value settles all four. Inside double quotes the parser still expands
+# escapes and interpolations, so backslash, quote and dollar each need escaping first -- in that
+# order, or the backslashes introduced by the later rules would themselves be doubled.
+esc() {
+  printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/$$/g')"
+}
 
-# A newline would end the assignment early and turn the rest of the value into garbage lines.
-# Refuse rather than write a file that half-works.
+# A newline is the one case quoting does not save: it ends the assignment and turns the rest of
+# the value into garbage lines. Refuse rather than write a file that half-works.
 for name in POSTGRES_PASSWORD JWT_SECRET BOOTSTRAP_ADMIN_PASSWORD; do
   case "${!name-}" in
     *$'\n'*)
