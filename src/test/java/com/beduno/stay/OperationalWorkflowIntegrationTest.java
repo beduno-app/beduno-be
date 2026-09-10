@@ -63,7 +63,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
                     StayResponse.class
             );
 
@@ -84,7 +84,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
                     StayResponse.class
             );
 
@@ -105,7 +105,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
                     String.class
             );
 
@@ -207,7 +207,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
                     StayResponse.class
             );
 
@@ -233,7 +233,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(room.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
                     String.class
             );
 
@@ -450,7 +450,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
                     StayResponse.class
             );
             assertThat(getStay(stay.id()).status()).isEqualTo(StayStatus.CHECKED_IN);
@@ -464,7 +464,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(altRoom.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(altRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
                     StayResponse.class
             );
 
@@ -544,7 +544,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
 
     private StayResponse createPlannedStay(UUID workerId, UUID propertyId, UUID roomId,
                                            LocalDate dateFrom, LocalDate dateTo) {
-        var request = new CreateStayRequest(workerId, propertyId, roomId, dateFrom, dateTo, null, null);
+        var request = new CreateStayRequest(workerId, propertyId, roomId, null, dateFrom, dateTo, null, null);
         return restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),

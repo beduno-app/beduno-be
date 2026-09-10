@@ -1,6 +1,7 @@
 package com.beduno.stay;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
 import com.beduno.room.GenderRule;
@@ -48,7 +49,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
 
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move", HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null),
                             authHeaders(Role.PROPERTY_ADMIN)),
                     String.class);
 
@@ -66,7 +67,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
 
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move", HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null),
                             authHeaders(Role.PROPERTY_ADMIN)),
                     StayResponse.class);
 
@@ -84,7 +85,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             var room = createRoom(property.id());
             var worker = createWorker();
             var request = new CreateStayRequest(
-                    worker.id(), property.id(), room.id(),
+                    worker.id(), property.id(), room.id(), null,
                     LocalDate.now(), LocalDate.now().plusDays(4),
                     null, "Arrives by night bus");
             var stay = restTemplate.exchange(
@@ -126,7 +127,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
     private StayResponse plannedStay(UUID propertyId, UUID roomId) {
         var worker = createWorker();
         var request = new CreateStayRequest(
-                worker.id(), propertyId, roomId,
+                worker.id(), propertyId, roomId, null,
                 LocalDate.now(), LocalDate.now().plusDays(4), null, null);
         return restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,
@@ -138,7 +139,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
                                        LocalDate dateFrom, LocalDate dateTo) {
         var worker = createWorker();
         var request = new CreateStayRequest(
-                worker.id(), propertyId, roomId, dateFrom, dateTo, null, null);
+                worker.id(), propertyId, roomId, null, dateFrom, dateTo, null, null);
         var stay = restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
@@ -165,10 +166,16 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
         var request = new CreateRoomRequest(
                 "Room-" + UUID.randomUUID().toString().substring(0, 8),
                 null, GenderRule.MIXED, null);
-        return restTemplate.exchange(
+        var room = restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
                 RoomResponse.class).getBody();
+        restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/rooms/" + room.id() + "/beds/bulk-generate",
+                HttpMethod.POST,
+                new HttpEntity<>(new BulkGenerateBedsRequest(1), authHeaders(Role.AGENCY_ADMIN)),
+                String.class);
+        return room;
     }
 
     private WorkerResponse createWorker() {

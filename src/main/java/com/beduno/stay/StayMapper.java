@@ -13,6 +13,8 @@ public interface StayMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agencyId", ignore = true)
+    @Mapping(target = "bedId", ignore = true)
+    @Mapping(target = "bedAutoAssigned", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "confirmedByUserId", ignore = true)
     @Mapping(target = "noShowReason", ignore = true)
@@ -25,6 +27,8 @@ public interface StayMapper {
     @Mapping(target = "agencyId", ignore = true)
     @Mapping(target = "workerId", ignore = true)
     @Mapping(target = "propertyId", ignore = true)
+    @Mapping(target = "bedId", ignore = true)
+    @Mapping(target = "bedAutoAssigned", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "confirmedByUserId", ignore = true)
     @Mapping(target = "noShowReason", ignore = true)

@@ -160,8 +160,10 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.property.has_rooms`, `error.property.has_stays` | `DELETE /properties/{id}` (409) |
 | `error.room.not_found` | room lookups (404) |
 | `error.room.number_exists` | room create/update (409) |
-| `error.room.blocked_spots_exceed_capacity` | room create/update (400) |
-| `error.room.has_stays` | `DELETE .../rooms/{id}` (409) |
+| `error.room.has_stays`, `error.room.has_beds` | `DELETE .../rooms/{id}` (409) |
+| `error.bed.not_found` | bed lookups (404) |
+| `error.bed.label_exists` | bed create/update (409) |
+| `error.bed.not_in_room` | stay write with a `bedId`/`targetBedId` outside the target room (400) |
 | `error.stay.not_found` | stay lookups (404) |
 | `error.stay.cannot_update_in_current_status` | `PUT /stays/{id}` (409) |
 | `error.stay.invalid_status_transition` | check-in / check-out / no-show / cancel (409) |
@@ -173,11 +175,10 @@ The original specification described "own property" scoping on roughly ten endpo
 > (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_uk` — six files with identical key sets) define every
 > code the Java sources reference, including `error.worker.not_found`,
 > `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`,
-> `error.room.not_found`, `error.room.number_exists` and
-> `error.room.blocked_spots_exceed_capacity`; `MessageBundleTest` fails the build on a missing key,
-> a blank value, or a code referenced from Java but undefined. They are used for CSV export
-> headers. API error responses still carry the **code**, not a translated string, so the frontend
-> supplies its own copy for anything it renders.
+> `error.room.not_found`, `error.room.number_exists`, `error.room.has_beds` and `error.bed.*`;
+> `MessageBundleTest` fails the build on a missing key, a blank value, or a code referenced from
+> Java but undefined. They are used for CSV export headers. API error responses still carry the
+> **code**, not a translated string, so the frontend supplies its own copy for anything it renders.
 
 ---
 
@@ -689,6 +690,8 @@ Setting `status: BLOCKED` makes the constraint engine reject any new or moved st
 
 ## 5. Stays
 
+> **11 Sep 2026:** Every stay write (`POST`, `PUT`, check-in, move, bulk-assign) now accepts an optional bed override — `bedId` (`targetBedId` on move) — alongside its room. Omit it and the system auto-assigns the lowest-label free bed in the room; supply it to place the worker in that exact bed. Every stay read now reports `bedId` and `bedAutoAssigned`. See `V11`-`V14` and `context/changes/named-beds/plan.md`.
+
 ### GET /api/v1/stays
 **Query params:** `?page=0&size=20&sort=date_from,desc&workerId=uuid&propertyId=uuid&status=CHECKED_IN&dateFrom=2026-04-01&dateTo=2026-04-30`
 
@@ -716,13 +719,14 @@ Create a planned stay. Runs the constraint engine.
   "workerId": "uuid",
   "propertyId": "uuid",
   "roomId": "uuid",
+  "bedId": null,
   "dateFrom": "2026-04-20",
   "dateTo": "2026-05-20",
   "overrideReason": null,
   "notes": "Night shift"
 }
 ```
-`workerId`, `propertyId`, `roomId`, `dateFrom` are `@NotNull`. `dateTo` is optional — `null` means open-ended. `overrideReason` and `notes` are optional free text.
+`workerId`, `propertyId`, `roomId`, `dateFrom` are `@NotNull`. `bedId` is optional — omit it and the system auto-assigns the lowest-label free `ACTIVE` bed in the room (`bedAutoAssigned: true` on the response); supply it to place the worker in that exact bed (`bedAutoAssigned: false`). `dateTo` is optional — `null` means open-ended. `overrideReason` and `notes` are optional free text.
 
 Supplying any non-null `overrideReason` suppresses **soft** violations (see §6). It never suppresses hard ones.
 
@@ -730,7 +734,9 @@ Supplying any non-null `overrideReason` suppresses **soft** violations (see §6)
 
 **Response 404:** `error.worker.not_found` / `error.room.not_found` / `error.property.not_found`
 
-**Response 422:** constraint violation
+**Response 400:** `error.bed.not_in_room` — `bedId` was supplied but doesn't belong to `roomId`
+
+**Response 422:** constraint violation, including `BED_UNAVAILABLE` when the room has no eligible bed at all
 
 > **Caveat.** Nothing validates that `dateTo > dateFrom`, nor that `roomId` belongs to `propertyId`. A bad date pair trips the `chk_stays_dates` database CHECK and surfaces as **500**; a room from another property in the same agency is accepted and silently creates an inconsistent stay.
 
@@ -743,13 +749,14 @@ Supplying any non-null `overrideReason` suppresses **soft** violations (see §6)
 ```json
 {
   "roomId": "uuid",
+  "bedId": null,
   "dateFrom": "2026-04-22",
   "dateTo": "2026-05-22",
   "overrideReason": null,
   "notes": null
 }
 ```
-`roomId` and `dateFrom` are `@NotNull`. `workerId`, `propertyId` and `status` **cannot** be changed here.
+`roomId` and `dateFrom` are `@NotNull`. `bedId` is optional, same auto-assign-or-override semantics as create. `workerId`, `propertyId` and `status` **cannot** be changed here.
 
 **Response 200:** `StayResponse`
 
@@ -775,13 +782,13 @@ Create many planned stays in one call. Never fails as a whole — each assignmen
 ```json
 {
   "assignments": [
-    { "workerId": "uuid-1", "propertyId": "uuid", "roomId": "uuid-a", "dateFrom": "2026-04-20", "dateTo": "2026-05-20" },
-    { "workerId": "uuid-2", "propertyId": "uuid", "roomId": "uuid-a", "dateFrom": "2026-04-20", "dateTo": "2026-05-20", "overrideReason": "Manager approved" },
+    { "workerId": "uuid-1", "propertyId": "uuid", "roomId": "uuid-a", "bedId": null, "dateFrom": "2026-04-20", "dateTo": "2026-05-20" },
+    { "workerId": "uuid-2", "propertyId": "uuid", "roomId": "uuid-a", "bedId": "uuid-bed", "dateFrom": "2026-04-20", "dateTo": "2026-05-20", "overrideReason": "Manager approved" },
     { "workerId": "uuid-3", "propertyId": "uuid", "roomId": "uuid-b", "dateFrom": "2026-04-20" }
   ]
 }
 ```
-`assignments` is `@NotEmpty` and each element is validated: `workerId`, `propertyId`, `roomId`, `dateFrom` are `@NotNull`; `dateTo` and `overrideReason` are optional. There is no `notes` field here.
+`assignments` is `@NotEmpty` and each element is validated: `workerId`, `propertyId`, `roomId`, `dateFrom` are `@NotNull`; `bedId`, `dateTo` and `overrideReason` are optional. There is no `notes` field here.
 
 **Response 200:**
 ```json
@@ -789,9 +796,9 @@ Create many planned stays in one call. Never fails as a whole — each assignmen
   "created": 2,
   "errors": 1,
   "results": [
-    { "index": 0, "workerId": "uuid-1", "stayId": "uuid", "status": "created", "errorCode": null },
-    { "index": 1, "workerId": "uuid-2", "stayId": "uuid", "status": "created", "errorCode": null },
-    { "index": 2, "workerId": "uuid-3", "stayId": null,  "status": "error",   "errorCode": "error.constraint.violated" }
+    { "index": 0, "workerId": "uuid-1", "stayId": "uuid", "bedId": "uuid-bed-1", "status": "created", "errorCode": null },
+    { "index": 1, "workerId": "uuid-2", "stayId": "uuid", "bedId": "uuid-bed",   "status": "created", "errorCode": null },
+    { "index": 2, "workerId": "uuid-3", "stayId": null,   "bedId": null,        "status": "error",   "errorCode": "error.constraint.violated" }
   ]
 }
 ```
@@ -813,6 +820,8 @@ See §8.
   "workerId": "uuid",
   "propertyId": "uuid",
   "roomId": "uuid",
+  "bedId": "uuid",
+  "bedAutoAssigned": true,
   "dateFrom": "2026-04-20",
   "dateTo": "2026-05-20",
   "status": "PLANNED",
@@ -823,6 +832,8 @@ See §8.
   "updatedAt": "2026-04-14T12:00:00Z"
 }
 ```
+`bedId` is now the real placement pointer (`roomId` stays as a denormalized convenience). `bedAutoAssigned` is `true` when the system picked the bed, `false` when the caller named it explicitly via `bedId`/`targetBedId`.
+
 `confirmed_by_user_id` **is** stored on check-in and move but is deliberately not exposed; read it from the audit trail if you need it.
 
 ---
@@ -871,14 +882,15 @@ Frontend flow:
 
 | `type` | Hard/Soft | `message` | `params` | Raised when |
 |--------|-----------|-----------|----------|-------------|
-| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.full` | `roomNumber`, `capacity`, `blocked` | `capacity - blockedSpots <= 0` — the room has no usable beds at all |
-| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.exceeded` | `roomNumber`, `capacity`, `occupied` | overlapping `PLANNED`/`EXPECTED_TODAY`/`CHECKED_IN` stays already fill every usable bed for the requested period |
+| `BED_OCCUPIED` | Hard | `constraint.bed.occupied` | `bedLabel`, `roomNumber` | another active stay already occupies this exact bed for an overlapping period |
+| `BED_BLOCKED` | Hard | `constraint.bed.blocked` | `bedLabel` | target bed `status = BLOCKED` |
+| `BED_UNAVAILABLE` | Hard | `constraint.bed.unavailable` | `roomNumber` | the room has no bed at all to auto-assign |
 | `DOUBLE_BOOKING` | Hard | `constraint.worker.double_booking` | `workerName` | the worker already has an overlapping active stay anywhere in the agency |
 | `ROOM_BLOCKED` | Hard | `constraint.room.blocked` | `roomNumber` | target room `status = BLOCKED` |
 | `PROPERTY_INACTIVE` | Hard | `constraint.property.inactive` | `propertyName` | target property `status = INACTIVE` |
 | `GENDER_MISMATCH` | Soft | `constraint.room.gender_mismatch` | `roomNumber`, `genderRule`, `workerGender` | room rule is `MALE_ONLY`/`FEMALE_ONLY` and the worker's gender does not match (`OTHER` mismatches both; rule `MIXED` never fires) |
 
-Note that one `type` (`CAPACITY_EXCEEDED`) maps to two different message codes — branch on `message`, not on `type`, when rendering.
+> **11 Sep 2026:** `CAPACITY_EXCEEDED` (room-level headcount) is gone — beds are the only source of truth now, and `BED_OCCUPIED`/`BED_BLOCKED`/`BED_UNAVAILABLE` replace it. See `context/changes/named-beds/plan.md`.
 
 The engine runs on: `POST /stays`, `PUT /stays/{id}`, `POST /stays/{id}/check-in`, `POST /stays/{id}/move`, and each item of `POST /stays/bulk-assign`. It does **not** run on check-out, no-show, cancel or bulk-checkout.
 
@@ -928,10 +940,12 @@ Counts such as "expected / checked-in / no-show / pending" are not provided — 
 ```json
 {
   "roomId": "uuid",
+  "bedId": null,
   "overrideReason": "Manager approved mixed-gender room"
 }
 ```
 - `roomId` — optional; send it only to check the worker into a room other than the planned one. When omitted the planned room is used.
+- `bedId` — optional; auto-assign-or-override, same semantics as create, resolved against the effective room.
 - `overrideReason` — optional; suppresses soft violations.
 - There is **no** `notes` field on check-in; the stay's `notes` are untouched.
 
@@ -1015,25 +1029,29 @@ Move a checked-in worker to another room **in the same property**.
 ```json
 {
   "targetRoomId": "uuid",
+  "targetBedId": null,
   "overrideReason": "Maintenance in the old room"
 }
 ```
-`targetRoomId` is `@NotNull`. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no reason field and no `notes` — **cross-property moves are not supported**.
+`targetRoomId` is `@NotNull`. `targetBedId` is optional — auto-assign-or-override within the target room, same semantics as create. `overrideReason` is optional and suppresses soft violations. There is **no** `targetPropertyId`, no reason field and no `notes` — **cross-property moves are not supported**.
 
 Mechanics:
-1. The current stay is set to `CHECKED_OUT` (its `dateFrom`/`dateTo` are left untouched)
-2. A **new** stay is created: same worker, same property, `roomId = targetRoomId`, `dateFrom = today`, `dateTo` = the original stay's `dateTo`, `status = CHECKED_IN`
-3. The constraint engine runs against the target room for `[today, originalDateTo)`, excluding the original stay
-4. Audit records a `CHECKED_OUT` event on the old stay and a `MOVED` event on the new one
+1. The target bed is resolved within `targetRoomId` (auto-assigned, or `targetBedId` if supplied) — **a move to a different bed in the same room now succeeds**; only resolving to the worker's *current* bed is rejected
+2. The current stay is set to `CHECKED_OUT` (its `dateFrom`/`dateTo` are left untouched)
+3. A **new** stay is created: same worker, same property, `roomId = targetRoomId`, `bedId` = the resolved bed, `dateFrom = today`, `dateTo` = the original stay's `dateTo`, `status = CHECKED_IN`
+4. The constraint engine runs against the target room and bed for `[today, originalDateTo)`, excluding the original stay
+5. Audit records a `CHECKED_OUT` event on the old stay and a `MOVED` event on the new one
 
 **Response 200:** a **single `StayResponse` — the new stay.** There is no `{previousStay, newStay}` wrapper. Re-fetch the original by ID if you need its post-move state.
 
 **Response 409:**
 - `error.stay.cannot_move_in_current_status` — the stay is not `CHECKED_IN`
-- `error.stay.move_same_room` — `targetRoomId` equals the current room
+- `error.stay.move_same_room` — the resolved target bed is the same as the stay's current bed (renamed from "same room": a same-room, different-bed move is no longer rejected)
 - `error.stay.cannot_move_on_last_day` — the stay's `dateTo` is today or earlier, so there is no night left to reassign (an open-ended stay with `dateTo: null` is always movable)
 
-**Response 422:** constraint violation on the target room · **404:** `error.stay.not_found` / `error.room.not_found`
+**Response 400:** `error.bed.not_in_room` — `targetBedId` was supplied but doesn't belong to `targetRoomId`
+
+**Response 422:** constraint violation on the target room/bed, including `BED_UNAVAILABLE`/`BED_OCCUPIED`/`BED_BLOCKED` · **404:** `error.stay.not_found` / `error.room.not_found`
 
 > **Caveats.** The old stay keeps its original `dateTo`, so the closed and the new stay overlap on paper. `overrideReason` is used for the constraint check and written to the audit event but is **not** persisted on the new stay. `targetRoomId` is resolved by agency only, so a room in a different property is accepted while the new stay keeps the original `propertyId`.
 

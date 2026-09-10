@@ -1,5 +1,8 @@
 package com.beduno.stay;
 
+import com.beduno.bed.Bed;
+import com.beduno.bed.BedRepository;
+import com.beduno.bed.BedStatus;
 import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
@@ -8,13 +11,16 @@ import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.ConstraintViolationException;
 import com.beduno.common.exception.ConstraintViolationException.ViolationDetail;
 import com.beduno.common.exception.NotFoundException;
+import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.TenantContext;
+import com.beduno.property.Property;
 import com.beduno.property.PropertyRepository;
 import com.beduno.room.Room;
 import com.beduno.room.RoomRepository;
 import com.beduno.stay.constraint.ConstraintContext;
 import com.beduno.stay.constraint.ConstraintEngine;
+import com.beduno.stay.constraint.HardViolation;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.stay.dto.BulkAssignRequest;
 import com.beduno.stay.dto.BulkAssignResult;
@@ -40,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +70,7 @@ public class StayService {
     private final WorkerRepository workerRepository;
     private final RoomRepository roomRepository;
     private final PropertyRepository propertyRepository;
+    private final BedRepository bedRepository;
     private final ConstraintEngine constraintEngine;
     private final StayMapper stayMapper;
     private final AuditService auditService;
@@ -92,16 +100,20 @@ public class StayService {
         var room = getRoomOrThrow(request.roomId(), agencyId);
         var property = getPropertyOrThrow(request.propertyId(), agencyId);
 
+        var assignment = resolveBed(room, worker, property,
+                request.dateFrom(), request.dateTo(), request.bedId(), null);
         var ctx = new ConstraintContext(worker, room, property,
-                request.dateFrom(), request.dateTo(), null, null);
+                request.dateFrom(), request.dateTo(), null, assignment.bed());
         runConstraints(ctx, request.overrideReason());
 
         var stay = stayMapper.toEntity(request);
         stay.setAgencyId(agencyId);
+        stay.setBedId(assignment.bed().getId());
+        stay.setBedAutoAssigned(assignment.autoAssigned());
         stay.setStatus(StayStatus.PLANNED);
         stay = stayRepository.save(stay);
         auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
-                AuditAction.CREATED, null, snapshot(stay), null);
+                AuditAction.CREATED, null, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
 
@@ -118,12 +130,16 @@ public class StayService {
         var room = getRoomOrThrow(request.roomId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
 
+        var assignment = resolveBed(room, worker, property,
+                request.dateFrom(), request.dateTo(), request.bedId(), stay.getId());
         var ctx = new ConstraintContext(worker, room, property,
-                request.dateFrom(), request.dateTo(), stay.getId(), null);
+                request.dateFrom(), request.dateTo(), stay.getId(), assignment.bed());
         runConstraints(ctx, request.overrideReason());
 
         var previous = snapshot(stay);
         stayMapper.updateEntity(request, stay);
+        stay.setBedId(assignment.bed().getId());
+        stay.setBedAutoAssigned(assignment.autoAssigned());
         stay = stayRepository.save(stay);
         auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.UPDATED, previous, snapshot(stay), request.overrideReason());
@@ -151,13 +167,17 @@ public class StayService {
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
 
+        var assignment = resolveBed(room, worker, property,
+                stay.getDateFrom(), stay.getDateTo(), request.bedId(), stay.getId());
         var ctx = new ConstraintContext(worker, room, property,
-                stay.getDateFrom(), stay.getDateTo(), stay.getId(), null);
+                stay.getDateFrom(), stay.getDateTo(), stay.getId(), assignment.bed());
         runConstraints(ctx, request.overrideReason());
 
         if (request.roomId() != null) {
             stay.setRoomId(request.roomId());
         }
+        stay.setBedId(assignment.bed().getId());
+        stay.setBedAutoAssigned(assignment.autoAssigned());
         var previous = snapshot(stay);
         stay.setStatus(StayStatus.CHECKED_IN);
         stay.setConfirmedByUserId(currentUserId());
@@ -190,9 +210,6 @@ public class StayService {
         if (stay.getStatus() != StayStatus.CHECKED_IN) {
             throw new ConflictException("error.stay.cannot_move_in_current_status");
         }
-        if (stay.getRoomId().equals(request.targetRoomId())) {
-            throw new ConflictException("error.stay.move_same_room");
-        }
 
         var targetRoom = getRoomOrThrow(request.targetRoomId(), agencyId);
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
@@ -208,8 +225,14 @@ public class StayService {
             throw new ConflictException("error.stay.cannot_move_on_last_day");
         }
 
+        var assignment = resolveBed(targetRoom, worker, property,
+                today, originalDateTo, request.targetBedId(), stay.getId());
+        if (stay.getBedId().equals(assignment.bed().getId())) {
+            throw new ConflictException("error.stay.move_same_room");
+        }
+
         var ctx = new ConstraintContext(worker, targetRoom, property,
-                today, originalDateTo, stay.getId(), null);
+                today, originalDateTo, stay.getId(), assignment.bed());
         runConstraints(ctx, request.overrideReason());
 
         var previousStay = snapshot(stay);
@@ -223,6 +246,8 @@ public class StayService {
         newStay.setWorkerId(stay.getWorkerId());
         newStay.setPropertyId(stay.getPropertyId());
         newStay.setRoomId(request.targetRoomId());
+        newStay.setBedId(assignment.bed().getId());
+        newStay.setBedAutoAssigned(assignment.autoAssigned());
         newStay.setDateFrom(today);
         newStay.setDateTo(originalDateTo);
         newStay.setStatus(StayStatus.CHECKED_IN);
@@ -285,7 +310,8 @@ public class StayService {
                 var worker = getWorkerOrThrow(a.workerId(), agencyId);
                 var room = getRoomOrThrow(a.roomId(), agencyId);
                 var property = getPropertyOrThrow(a.propertyId(), agencyId);
-                var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null, null);
+                var assignment = resolveBed(room, worker, property, a.dateFrom(), a.dateTo(), a.bedId(), null);
+                var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null, assignment.bed());
                 runConstraints(ctx, a.overrideReason());
 
                 var stay = new Stay();
@@ -293,17 +319,19 @@ public class StayService {
                 stay.setWorkerId(a.workerId());
                 stay.setPropertyId(a.propertyId());
                 stay.setRoomId(a.roomId());
+                stay.setBedId(assignment.bed().getId());
+                stay.setBedAutoAssigned(assignment.autoAssigned());
                 stay.setDateFrom(a.dateFrom());
                 stay.setDateTo(a.dateTo());
                 stay.setOverrideReason(a.overrideReason());
                 stay.setStatus(StayStatus.PLANNED);
                 stay = stayRepository.save(stay);
                 auditService.log(agencyId, actorId, AuditEntityType.STAY, stay.getId(),
-                        AuditAction.BULK_ASSIGNED, null, snapshot(stay), null);
-                results.add(new AssignmentResult(i, a.workerId(), stay.getId(), "created", null));
+                        AuditAction.BULK_ASSIGNED, null, snapshot(stay), a.overrideReason());
+                results.add(new AssignmentResult(i, a.workerId(), stay.getId(), stay.getBedId(), "created", null));
                 created++;
             } catch (Exception e) {
-                results.add(new AssignmentResult(i, a.workerId(), null, "error", e.getMessage()));
+                results.add(new AssignmentResult(i, a.workerId(), null, null, "error", e.getMessage()));
                 errors++;
             }
         }
@@ -370,6 +398,53 @@ public class StayService {
         return params;
     }
 
+    private record BedAssignment(Bed bed, boolean autoAssigned) {}
+
+    /**
+     * Resolves which bed a worker occupies -- the planner's explicit choice, or the system's
+     * pick -- used by every write path instead of duplicating auto-assign logic five times.
+     *
+     * <p>This only decides *which* bed; it never throws for an explicit choice that turns out to
+     * violate a constraint (e.g. an occupied or blocked bed) -- that enforcement, including the
+     * override-reason-vs-soft-violation semantics, is left entirely to the caller's own
+     * ConstraintContext/runConstraints call immediately afterward, exactly as it already handles
+     * room/worker/property checks. Auto-assign is the one case that must evaluate the engine here,
+     * since it needs to know whether a candidate is viable before committing to it.
+     */
+    private BedAssignment resolveBed(Room room, Worker worker, Property property,
+                                      LocalDate dateFrom, LocalDate dateTo,
+                                      UUID requestedBedId, UUID excludeStayId) {
+        if (requestedBedId != null) {
+            var bed = bedRepository.findByIdAndAgencyIdAndRoomId(requestedBedId, room.getAgencyId(), room.getId())
+                    .orElseThrow(() -> new ValidationException("error.bed.not_in_room"));
+            return new BedAssignment(bed, false);
+        }
+
+        var candidates = bedRepository.findAllByAgencyIdAndRoomId(room.getAgencyId(), room.getId()).stream()
+                .filter(bed -> bed.getStatus() == BedStatus.ACTIVE)
+                .sorted(Comparator.comparing(Bed::getLabel))
+                .toList();
+
+        if (candidates.isEmpty()) {
+            throw new ConstraintViolationException("error.constraint.violated", List.of(new ViolationDetail(
+                    "BED_UNAVAILABLE", null, "constraint.bed.unavailable",
+                    Map.of("roomNumber", room.getRoomNumber()))));
+        }
+
+        List<HardViolation> firstCandidateViolations = null;
+        for (var bed : candidates) {
+            var ctx = new ConstraintContext(worker, room, property, dateFrom, dateTo, excludeStayId, bed);
+            var result = constraintEngine.evaluate(ctx);
+            if (result.isAllowed()) {
+                return new BedAssignment(bed, true);
+            }
+            if (firstCandidateViolations == null) {
+                firstCandidateViolations = result.hardViolations();
+            }
+        }
+        throw new ConstraintViolationException("error.constraint.violated", toViolationDetails(firstCandidateViolations));
+    }
+
     private UUID currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
@@ -394,7 +469,7 @@ public class StayService {
                 .orElseThrow(() -> new NotFoundException("error.room.not_found"));
     }
 
-    private com.beduno.property.Property getPropertyOrThrow(UUID propertyId, UUID agencyId) {
+    private Property getPropertyOrThrow(UUID propertyId, UUID agencyId) {
         return propertyRepository.findByIdAndAgencyId(propertyId, agencyId)
                 .orElseThrow(() -> new NotFoundException("error.property.not_found"));
     }
@@ -404,6 +479,8 @@ public class StayService {
         map.put("status", stay.getStatus().name());
         map.put("workerId", stay.getWorkerId().toString());
         map.put("roomId", stay.getRoomId().toString());
+        map.put("bedId", stay.getBedId().toString());
+        map.put("bedAutoAssigned", stay.isBedAutoAssigned());
         map.put("propertyId", stay.getPropertyId().toString());
         map.put("dateFrom", stay.getDateFrom().toString());
         if (stay.getDateTo() != null) {

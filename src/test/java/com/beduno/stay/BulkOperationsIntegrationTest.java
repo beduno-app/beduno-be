@@ -148,9 +148,9 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
             var worker2 = createWorker();
 
             var request = new BulkAssignRequest(List.of(
-                    new Assignment(worker1.id(), property.id(), room.id(),
+                    new Assignment(worker1.id(), property.id(), room.id(), null,
                             LocalDate.now().plusDays(1), LocalDate.now().plusDays(7), null),
-                    new Assignment(worker2.id(), property.id(), room.id(),
+                    new Assignment(worker2.id(), property.id(), room.id(), null,
                             LocalDate.now().plusDays(1), LocalDate.now().plusDays(7), null)
             ));
 
@@ -184,9 +184,9 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
             createAndCheckInStay(worker1.id(), property.id(), room.id(), checkInDate);
 
             var request = new BulkAssignRequest(List.of(
-                    new Assignment(worker2.id(), property.id(), room.id(),
+                    new Assignment(worker2.id(), property.id(), room.id(), null,
                             checkInDate, LocalDate.now().plusDays(5), null),
-                    new Assignment(worker1.id(), property.id(), room.id(),
+                    new Assignment(worker1.id(), property.id(), room.id(), null,
                             LocalDate.now().plusDays(10), LocalDate.now().plusDays(15), null)
             ));
 
@@ -322,7 +322,7 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
 
     private StayResponse createPlannedStay(UUID workerId, UUID propertyId, UUID roomId,
                                            LocalDate dateFrom, LocalDate dateTo) {
-        var request = new CreateStayRequest(workerId, propertyId, roomId, dateFrom, dateTo, null, null);
+        var request = new CreateStayRequest(workerId, propertyId, roomId, null, dateFrom, dateTo, null, null);
         return restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),

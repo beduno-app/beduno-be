@@ -52,7 +52,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
 
             var request = new CreateStayRequest(
-                    worker.id(), property.id(), room.id(),
+                    worker.id(), property.id(), room.id(), null,
                     LocalDate.now().plusDays(1), LocalDate.now().plusDays(8),
                     null, null
             );
@@ -76,7 +76,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
 
             var request = new CreateStayRequest(
-                    worker.id(), property.id(), room.id(),
+                    worker.id(), property.id(), room.id(), null,
                     LocalDate.now().plusDays(1), LocalDate.now().plusDays(8),
                     null, null
             );
@@ -106,7 +106,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             createStay(worker1.id(), property.id(), room.id(), dateFrom, dateTo, null);
 
             var request = new CreateStayRequest(
-                    worker2.id(), property.id(), room.id(), dateFrom, dateTo, null, null
+                    worker2.id(), property.id(), room.id(), null, dateFrom, dateTo, null, null
             );
             var response = restTemplate.exchange(
                     "/api/v1/stays", HttpMethod.POST,
@@ -132,7 +132,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             createStay(worker.id(), property.id(), room1.id(), dateFrom, dateTo, null);
 
             var request = new CreateStayRequest(
-                    worker.id(), property.id(), room2.id(), dateFrom, dateTo, null, null
+                    worker.id(), property.id(), room2.id(), null, dateFrom, dateTo, null, null
             );
             var response = restTemplate.exchange(
                     "/api/v1/stays", HttpMethod.POST,
@@ -151,7 +151,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             var maleRoom = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MALE_ONLY);
 
             var request = new CreateStayRequest(
-                    femaleWorker.id(), property.id(), maleRoom.id(),
+                    femaleWorker.id(), property.id(), maleRoom.id(), null,
                     LocalDate.now().plusDays(30), LocalDate.now().plusDays(37),
                     null, null
             );
@@ -173,7 +173,7 @@ class StayIntegrationTest extends IntegrationTestBase {
             var maleRoom = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MALE_ONLY);
 
             var request = new CreateStayRequest(
-                    femaleWorker.id(), property.id(), maleRoom.id(),
+                    femaleWorker.id(), property.id(), maleRoom.id(), null,
                     LocalDate.now().plusDays(40), LocalDate.now().plusDays(47),
                     "Emergency placement approved by manager", null
             );
@@ -245,7 +245,7 @@ class StayIntegrationTest extends IntegrationTestBase {
 
             var newDateFrom = dateFrom.plusDays(1);
             var updateRequest = new UpdateStayRequest(
-                    room.id(), newDateFrom, newDateFrom.plusDays(7), null, "Updated notes"
+                    room.id(), null, newDateFrom, newDateFrom.plusDays(7), null, "Updated notes"
             );
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
@@ -376,7 +376,7 @@ class StayIntegrationTest extends IntegrationTestBase {
 
     private StayResponse createStay(UUID workerId, UUID propertyId, UUID roomId,
                                     LocalDate dateFrom, LocalDate dateTo, String overrideReason) {
-        var request = new CreateStayRequest(workerId, propertyId, roomId, dateFrom, dateTo, overrideReason, null);
+        var request = new CreateStayRequest(workerId, propertyId, roomId, null, dateFrom, dateTo, overrideReason, null);
         var response = restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),

@@ -124,9 +124,12 @@ public class RoomService {
     public void delete(UUID propertyId, UUID roomId) {
         var room = getRoomOrThrow(propertyId, roomId);
 
-        // stays.room_id is a RESTRICT foreign key — see PropertyService.delete.
+        // stays.room_id and beds.room_id are both RESTRICT foreign keys — see PropertyService.delete.
         if (stayRepository.countByAgencyIdAndRoomId(room.getAgencyId(), roomId) > 0) {
             throw new ConflictException("error.room.has_stays");
+        }
+        if (bedRepository.countByAgencyIdAndRoomId(room.getAgencyId(), roomId) > 0) {
+            throw new ConflictException("error.room.has_beds");
         }
 
         var previous = snapshot(room);

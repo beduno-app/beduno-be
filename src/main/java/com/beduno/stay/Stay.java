@@ -31,13 +31,12 @@ public class Stay extends BaseEntity {
     @Column(name = "room_id", nullable = false)
     private UUID roomId;
 
-    /**
-     * Nullable through phase 3: no write path resolves a bed until phase 4's resolveBed lands, at
-     * which point this becomes the real placement pointer and the column gets its NOT NULL
-     * constraint (V14). See the named-beds plan's Critical Implementation Details.
-     */
-    @Column(name = "bed_id")
+    /** The real placement pointer, guaranteed by StayService.resolveBed on every write path. */
+    @Column(name = "bed_id", nullable = false)
     private UUID bedId;
+
+    @Column(name = "bed_auto_assigned", nullable = false)
+    private boolean bedAutoAssigned = true;
 
     @Column(name = "date_from", nullable = false)
     private LocalDate dateFrom;

@@ -1,6 +1,7 @@
 package com.beduno.property;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.bed.dto.BulkGenerateBedsRequest;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
 import com.beduno.room.GenderRule;
@@ -132,9 +133,14 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
     }
 
     private StayResponse createStay(UUID propertyId, UUID roomId) {
+        restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/rooms/" + roomId + "/beds/bulk-generate",
+                HttpMethod.POST,
+                new HttpEntity<>(new BulkGenerateBedsRequest(1), authHeaders(Role.AGENCY_ADMIN)),
+                String.class);
         var worker = createWorker();
         var request = new CreateStayRequest(
-                worker.id(), propertyId, roomId,
+                worker.id(), propertyId, roomId, null,
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(5), null, null);
         return restTemplate.exchange(
                 "/api/v1/stays", HttpMethod.POST,

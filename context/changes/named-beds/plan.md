@@ -531,17 +531,17 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 3.1 Constraint engine tests pass (bed-blocked case): `./gradlew test --tests 'com.beduno.stay.constraint.*'`
-- [x] 3.2 Full build green: `./gradlew build`
+- [x] 3.1 Constraint engine tests pass (bed-blocked case): `./gradlew test --tests 'com.beduno.stay.constraint.*'` — 00f1778
+- [x] 3.2 Full build green: `./gradlew build` — 00f1778
 
 ### Phase 4: Stay write-path bed integration
 
 #### Automated
 
-- [ ] 4.1 Compiles: `./gradlew compileJava`
-- [ ] 4.2 Stay module tests pass: `./gradlew test --tests 'com.beduno.stay.*'`
-- [ ] 4.3 Full build green, migration V14 applies cleanly: `./gradlew build`
-- [ ] 4.4 Message bundles complete for the two new codes (MessageBundleTest passes)
+- [x] 4.1 Compiles: `./gradlew compileJava`
+- [x] 4.2 Stay module tests pass: `./gradlew test --tests 'com.beduno.stay.*'`
+- [x] 4.3 Full build green, migration V14 applies cleanly: `./gradlew build`
+- [x] 4.4 Message bundles complete for the two new codes (MessageBundleTest passes)
 
 #### Manual
 

@@ -9,6 +9,8 @@ public record StaySummary(
         UUID id,
         UUID workerId,
         UUID roomId,
+        UUID bedId,
+        boolean bedAutoAssigned,
         LocalDate dateFrom,
         LocalDate dateTo,
         StayStatus status

@@ -12,6 +12,7 @@ public record BulkAssignResult(
             int index,
             UUID workerId,
             UUID stayId,
+            UUID bedId,
             String status,
             String errorCode
     ) {}

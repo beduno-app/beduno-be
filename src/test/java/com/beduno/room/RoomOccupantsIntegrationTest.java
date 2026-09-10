@@ -177,13 +177,13 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
         var stay = createStay(workerId);
         jdbcTemplate.update("UPDATE stays SET status = 'EXPECTED_TODAY' WHERE id = ?", stay.id());
         var response = restTemplate.exchange("/api/v1/stays/" + stay.id() + "/check-in",
-                HttpMethod.POST, new HttpEntity<>(new CheckInRequest(null, null),
+                HttpMethod.POST, new HttpEntity<>(new CheckInRequest(null, null, null),
                         authHeaders(Role.FRONT_DESK)), StayResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     private StayResponse createStay(UUID workerId) {
-        var request = new CreateStayRequest(workerId, property.id(), room.id(),
+        var request = new CreateStayRequest(workerId, property.id(), room.id(), null,
                 LocalDate.now(), LocalDate.now().plusDays(7), null, null);
         return restTemplate.exchange("/api/v1/stays", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
@@ -209,9 +209,15 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
 
     private RoomResponse createRoom(String roomNumber) {
         var request = new CreateRoomRequest(roomNumber, 1, GenderRule.MIXED, null);
-        return restTemplate.exchange(
+        var created = restTemplate.exchange(
                 "/api/v1/properties/" + property.id() + "/rooms", HttpMethod.POST,
                 new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
                 RoomResponse.class).getBody();
+        restTemplate.exchange(
+                "/api/v1/properties/" + property.id() + "/rooms/" + created.id() + "/beds/bulk-generate",
+                HttpMethod.POST,
+                new HttpEntity<>(new BulkGenerateBedsRequest(1), authHeaders(Role.AGENCY_ADMIN)),
+                String.class);
+        return created;
     }
 }

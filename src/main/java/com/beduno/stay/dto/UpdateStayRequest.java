@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public record UpdateStayRequest(
         @NotNull UUID roomId,
+        UUID bedId,
         @NotNull LocalDate dateFrom,
         LocalDate dateTo,
         String overrideReason,

@@ -11,6 +11,8 @@ public record StayResponse(
         UUID workerId,
         UUID propertyId,
         UUID roomId,
+        UUID bedId,
+        boolean bedAutoAssigned,
         LocalDate dateFrom,
         LocalDate dateTo,
         StayStatus status,
