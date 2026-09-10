@@ -18,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -77,7 +78,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } else {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            // Explicit: the servlet default is ISO-8859-1 and getWriter() encodes with whatever the
+            // response declares, so without this the header lies and any localized string mojibakes.
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             objectMapper.writeValue(
                     response.getWriter(),
                     ErrorResponse.of("RATE_LIMIT_EXCEEDED", "error.rate_limit_exceeded"));

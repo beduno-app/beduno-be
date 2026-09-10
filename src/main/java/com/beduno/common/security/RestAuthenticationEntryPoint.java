@@ -12,6 +12,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Returns 401 with the standard {@link ErrorResponse} envelope when an
@@ -32,7 +33,10 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
                          HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        // Explicit: the servlet default is ISO-8859-1 and getWriter() encodes with whatever the
+        // response declares, so without this the header lies and any localized string mojibakes.
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         objectMapper.writeValue(
                 response.getWriter(),
                 ErrorResponse.of("UNAUTHORIZED", "error.auth.unauthorized"));
