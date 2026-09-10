@@ -155,7 +155,7 @@ Hard and soft violations never appear in the same response — hard violations s
       "field": null,
       "message": "constraint.room.gender_mismatch",
       "params": {
-        "roomName": "12",
+        "roomNumber": "12",
         "genderRule": "FEMALE_ONLY",
         "workerGender": "MALE"
       }

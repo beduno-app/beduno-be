@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -73,6 +75,12 @@ public interface WorkerRepository extends JpaRepository<Worker, UUID> {
             Pageable pageable);
 
     Optional<Worker> findByIdAndAgencyIdAndStatusNot(UUID id, UUID agencyId, WorkerStatus status);
+
+    /**
+     * Agency-filtered deliberately: the ids come from a stay query, and reaching for findAllById
+     * here would be a cross-tenant read that the tenancy rule would then have to carve out.
+     */
+    List<Worker> findAllByAgencyIdAndIdIn(UUID agencyId, Collection<UUID> ids);
 
     boolean existsByAgencyIdAndInternalId(UUID agencyId, String internalId);
 }

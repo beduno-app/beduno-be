@@ -66,11 +66,28 @@ public abstract class IntegrationTestBase {
 
     /** An unsaved User carrying just enough state for the token provider. */
     protected User testUser(Role role, UUID agencyId, UUID[] propertyIds) {
+        return testUser(role, agencyId, propertyIds, DEFAULT_USER_ID);
+    }
+
+    /**
+     * Headers for a subject with no row in users. Taking the id explicitly matters: a test that
+     * wants an absent user cannot rely on DEFAULT_USER_ID being absent, because any other test
+     * class that calls ensureUserExists creates it and the two then depend on execution order.
+     */
+    protected HttpHeaders authHeadersForUser(Role role, UUID userId) {
+        var token = jwtTokenProvider.generateAccessToken(
+                testUser(role, DEFAULT_AGENCY_ID, new UUID[0], userId));
+        var headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        return headers;
+    }
+
+    protected User testUser(Role role, UUID agencyId, UUID[] propertyIds, UUID userId) {
         var user = new User();
         try {
             var idField = com.beduno.common.model.BaseEntity.class.getDeclaredField("id");
             idField.setAccessible(true);
-            idField.set(user, DEFAULT_USER_ID);
+            idField.set(user, userId);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }

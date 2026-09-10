@@ -1,5 +1,13 @@
 package com.beduno.room;
 
+import java.util.stream.Collectors;
+import java.util.List;
+import java.time.LocalDate;
+import com.beduno.worker.WorkerRepository;
+import com.beduno.worker.Worker;
+import com.beduno.stay.StayStatus;
+import com.beduno.stay.Stay;
+import com.beduno.room.dto.RoomOccupant;
 import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
@@ -48,6 +56,7 @@ public class RoomService {
     private final PropertyService propertyService;
     private final AuditService auditService;
     private final StayRepository stayRepository;
+    private final WorkerRepository workerRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
@@ -55,13 +64,14 @@ public class RoomService {
         propertyService.getPropertyOrThrow(propertyId);
         var page = roomRepository.findAllByAgencyIdAndPropertyId(
                 agencyId, propertyId, SortFields.translate(pageable, SORTABLE));
-        return PageResponse.of(page.map(roomMapper::toResponse));
+        var occupants = occupantsByRoom(agencyId, propertyId);
+        return PageResponse.of(page.map(room -> withOccupants(room, occupants)));
     }
 
     @Transactional(readOnly = true)
     public RoomResponse findById(UUID propertyId, UUID roomId) {
         var room = getRoomOrThrow(propertyId, roomId);
-        return roomMapper.toResponse(room);
+        return withOccupants(room, occupantsByRoom(TenantContext.requireAgencyId(), propertyId));
     }
 
     @Transactional
@@ -127,6 +137,46 @@ public class RoomService {
             return currentUser.userId();
         }
         return null;
+    }
+
+    /**
+     * Occupancy means CHECKED_IN today -- who is actually in the room -- matching what the
+     * occupancy board counts. A stay that is merely expected has not taken the bed yet, and
+     * showing it as occupancy would misreport the one number the room card exists to convey.
+     */
+    private static final List<StayStatus> OCCUPYING_STATUSES = List.of(StayStatus.CHECKED_IN);
+
+    /**
+     * Loaded once per request for the whole property rather than per room: a page of rooms would
+     * otherwise issue a stay query and a worker query each.
+     */
+    private Map<UUID, List<RoomOccupant>> occupantsByRoom(UUID agencyId, UUID propertyId) {
+        var stays = stayRepository.findActiveStaysForPropertyOnDate(
+                agencyId, propertyId, LocalDate.now(), OCCUPYING_STATUSES);
+        if (stays.isEmpty()) {
+            return Map.of();
+        }
+        var workerIds = stays.stream().map(Stay::getWorkerId).collect(Collectors.toSet());
+        var workersById = workerRepository.findAllByAgencyIdAndIdIn(agencyId, workerIds).stream()
+                .collect(Collectors.toMap(Worker::getId, w -> w));
+        return stays.stream()
+                .filter(stay -> workersById.containsKey(stay.getWorkerId()))
+                .map(stay -> {
+                    var w = workersById.get(stay.getWorkerId());
+                    return Map.entry(stay.getRoomId(), new RoomOccupant(
+                            stay.getId(),
+                            new RoomOccupant.OccupantWorker(
+                                    w.getId(), w.getInternalId(), w.getFirstName(),
+                                    w.getLastName(), w.getGender()),
+                            stay.getDateFrom(), stay.getDateTo(), stay.getStatus()));
+                })
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+    }
+
+    private RoomResponse withOccupants(Room room, Map<UUID, List<RoomOccupant>> occupantsByRoom) {
+        var occupants = occupantsByRoom.getOrDefault(room.getId(), List.of());
+        return roomMapper.toResponse(room).withOccupancy(occupants.size(), occupants);
     }
 
     private Map<String, Object> snapshot(Room room) {

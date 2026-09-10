@@ -105,8 +105,9 @@ class AuthIntegrationTest extends IntegrationTestBase {
 
         @Test
         void shouldReturnNotFound_whenJwtSubjectHasNoUserRow() {
-            var headers = authHeaders(Role.AGENCY_ADMIN);
-            // JWT is structurally valid but its subject has no row in users.
+            // JWT is structurally valid but its subject has no row in users. The id is generated
+            // rather than DEFAULT_USER_ID, which other test classes insert.
+            var headers = authHeadersForUser(Role.AGENCY_ADMIN, UUID.randomUUID());
             var response = restTemplate.exchange(
                     "/api/v1/auth/me", HttpMethod.GET,
                     new HttpEntity<>(headers), String.class

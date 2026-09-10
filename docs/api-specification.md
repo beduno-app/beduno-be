@@ -52,7 +52,7 @@ Not every list endpoint is paginated — arrivals, occupancy, exceptions and the
 | `GET /workers` | `firstName`, `lastName`, `internalId`, `status`, `gender`, `nationality`, `dateOfBirth`, `createdAt`, `updatedAt` | `lastName,asc` |
 | `GET /properties` | `name`, `address`, `city`, `status`, `createdAt`, `updatedAt` | `name,asc` |
 | `GET /stays` | `dateFrom`, `dateTo`, `status`, `createdAt`, `updatedAt` | `dateFrom,desc` |
-| `GET /properties/{id}/rooms` | `name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt` | `name,asc` |
+| `GET /properties/{id}/rooms` | `roomNumber`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt` | `roomNumber,asc` |
 | `GET /audit` | `createdAt`, `entityType`, `entityId`, `action`, `actorUserId` | `createdAt,desc` |
 
 ### Error Response
@@ -159,7 +159,7 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.property.access_denied` | scoped property/room writes (403) |
 | `error.property.has_rooms`, `error.property.has_stays` | `DELETE /properties/{id}` (409) |
 | `error.room.not_found` | room lookups (404) |
-| `error.room.name_exists` | room create/update (409) |
+| `error.room.number_exists` | room create/update (409) |
 | `error.room.blocked_spots_exceed_capacity` | room create/update (400) |
 | `error.room.has_stays` | `DELETE .../rooms/{id}` (409) |
 | `error.stay.not_found` | stay lookups (404) |
@@ -173,7 +173,7 @@ The original specification described "own property" scoping on roughly ten endpo
 > (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_uk` — six files with identical key sets) define every
 > code the Java sources reference, including `error.worker.not_found`,
 > `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`,
-> `error.room.not_found`, `error.room.name_exists` and
+> `error.room.not_found`, `error.room.number_exists` and
 > `error.room.blocked_spots_exceed_capacity`; `MessageBundleTest` fails the build on a missing key,
 > a blank value, or a code referenced from Java but undefined. They are used for CSV export
 > headers. API error responses still carry the **code**, not a translated string, so the frontend
@@ -580,12 +580,16 @@ There is no `type`, no `genderRule` (that lives on the room) and no `roomSummary
 
 All room endpoints are nested under a property: `/api/v1/properties/{propertyId}/rooms`. Every one of them first resolves the property and returns **404 `error.property.not_found`** if it does not exist in the caller's agency.
 
-Rooms are identified by **`name`** (a string, unique per property) — there is no `roomNumber` field anywhere in the API. `floor` is also a **string**, not a number.
+Rooms are identified by **`roomNumber`** (a string, unique per property — `"101"`, `"A-3"`). `floor` is an **integer** and may be null.
+
+`RoomResponse` also carries **`currentOccupancy`** and **`occupants[]`**: who is `CHECKED_IN` in that room today. A merely planned stay has not taken the bed and is not counted. Each occupant carries `stayId`, `dateFrom`, `dateTo`, `status`, and a nested `worker` (`id`, `internalId`, `firstName`, `lastName`, `gender`).
+
+> This reverses what this document said before 10 Sep 2026, when it recorded the backend's own naming (`name`, a string `floor`, gender rule `ANY`). That naming had diverged from the frontend contract the client was built against; the contract won. See `V9__room_contract_alignment.sql`.
 
 ### GET /api/v1/properties/{propertyId}/rooms
 **Query params:** `?page=0&size=50&sort=name,asc`
 
-There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`name`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
+There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`roomNumber`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
 
 **Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
 
@@ -624,7 +628,7 @@ Status is always `ACTIVE` on create.
 
 **Response 201:** `RoomResponse` (no `Location` header)
 
-**Response 409:** `error.room.name_exists` — another room in this property already has that name
+**Response 409:** `error.room.number_exists` — another room in this property already has that number
 
 **Response 400:** `error.room.blocked_spots_exceed_capacity` (a `ValidationException`, so `details` is absent) when `blockedSpots > capacity`
 
@@ -646,7 +650,7 @@ Status is always `ACTIVE` on create.
 }
 ```
 
-**Response 200:** `RoomResponse` · **409:** `error.room.name_exists` (only when the name actually changes) · **400:** `error.room.blocked_spots_exceed_capacity`
+**Response 200:** `RoomResponse` · **409:** `error.room.number_exists` (only when the number actually changes) · **400:** `error.room.blocked_spots_exceed_capacity`
 
 Setting `status: BLOCKED` makes the constraint engine reject any new or moved stay into this room with a hard `ROOM_BLOCKED` violation. It does not evict existing occupants.
 
@@ -833,7 +837,7 @@ When the constraint engine rejects a stay operation the API returns **422** with
       "type": "CAPACITY_EXCEEDED",
       "field": null,
       "message": "constraint.room.capacity.exceeded",
-      "params": { "roomName": "12", "capacity": 4, "occupied": 4 }
+      "params": { "roomNumber": "12", "capacity": 4, "occupied": 4 }
     }
   ],
   "timestamp": "2026-04-14T12:00:00Z"
@@ -864,12 +868,12 @@ Frontend flow:
 
 | `type` | Hard/Soft | `message` | `params` | Raised when |
 |--------|-----------|-----------|----------|-------------|
-| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.full` | `roomName`, `capacity`, `blocked` | `capacity - blockedSpots <= 0` — the room has no usable beds at all |
-| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.exceeded` | `roomName`, `capacity`, `occupied` | overlapping `PLANNED`/`EXPECTED_TODAY`/`CHECKED_IN` stays already fill every usable bed for the requested period |
+| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.full` | `roomNumber`, `capacity`, `blocked` | `capacity - blockedSpots <= 0` — the room has no usable beds at all |
+| `CAPACITY_EXCEEDED` | Hard | `constraint.room.capacity.exceeded` | `roomNumber`, `capacity`, `occupied` | overlapping `PLANNED`/`EXPECTED_TODAY`/`CHECKED_IN` stays already fill every usable bed for the requested period |
 | `DOUBLE_BOOKING` | Hard | `constraint.worker.double_booking` | `workerName` | the worker already has an overlapping active stay anywhere in the agency |
-| `ROOM_BLOCKED` | Hard | `constraint.room.blocked` | `roomName` | target room `status = BLOCKED` |
+| `ROOM_BLOCKED` | Hard | `constraint.room.blocked` | `roomNumber` | target room `status = BLOCKED` |
 | `PROPERTY_INACTIVE` | Hard | `constraint.property.inactive` | `propertyName` | target property `status = INACTIVE` |
-| `GENDER_MISMATCH` | Soft | `constraint.room.gender_mismatch` | `roomName`, `genderRule`, `workerGender` | room rule is `MALE_ONLY`/`FEMALE_ONLY` and the worker's gender does not match (`OTHER` mismatches both; rule `ANY` never fires) |
+| `GENDER_MISMATCH` | Soft | `constraint.room.gender_mismatch` | `roomNumber`, `genderRule`, `workerGender` | room rule is `MALE_ONLY`/`FEMALE_ONLY` and the worker's gender does not match (`OTHER` mismatches both; rule `MIXED` never fires) |
 
 Note that one `type` (`CAPACITY_EXCEEDED`) maps to two different message codes — branch on `message`, not on `type`, when rendering.
 
@@ -1053,7 +1057,7 @@ Counts only stays with `status = CHECKED_IN` that span the date (`dateFrom <= da
 [
   {
     "roomId": "uuid",
-    "roomName": "12",
+    "roomNumber": "12",
     "floor": "2",
     "capacity": 4,
     "blockedSpots": 0,
@@ -1079,7 +1083,7 @@ Rooms that need attention on a date.
 [
   {
     "roomId": "uuid",
-    "roomName": "5",
+    "roomNumber": "5",
     "exceptionType": "OVER_CAPACITY",
     "capacity": 4,
     "blockedSpots": 0,
@@ -1134,7 +1138,7 @@ Room-by-room roster to walk the building with.
 [
   {
     "roomId": "uuid",
-    "roomName": "12",
+    "roomNumber": "12",
     "floor": "2",
     "expectedOccupants": [
       { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko" }
@@ -1175,7 +1179,7 @@ Every room of the property is evaluated, not just the ones you submit — **a ro
   "discrepancies": [
     {
       "roomId": "uuid-a",
-      "roomName": "12",
+      "roomNumber": "12",
       "items": [
         { "workerId": "uuid-1", "discrepancyType": "EXPECTED_NOT_PRESENT" },
         { "workerId": "uuid-9", "discrepancyType": "UNEXPECTED_PRESENT" }
