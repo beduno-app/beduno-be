@@ -2,6 +2,7 @@ package com.beduno.stay.constraint;
 
 import com.beduno.TestBuilders;
 import com.beduno.bed.Bed;
+import com.beduno.bed.BedStatus;
 import com.beduno.property.PropertyStatus;
 import com.beduno.room.GenderRule;
 import com.beduno.room.RoomStatus;
@@ -110,6 +111,39 @@ class ConstraintEngineTest {
 
             assertThat(result.hardViolations()).noneMatch(v -> v.type().equals("ROOM_BLOCKED")
                     || v.type().equals("PROPERTY_INACTIVE"));
+        }
+
+        @Test
+        void shouldBlockOperation_whenBedIsBlocked() {
+            var room = TestBuilders.aRoom().build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).status(BedStatus.BLOCKED).build();
+            var worker = TestBuilders.aWorker().build();
+            var property = TestBuilders.aProperty().build();
+
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+
+            var result = engine.evaluate(ctx(worker, room, property, bed, null));
+
+            assertThat(result.isAllowed()).isFalse();
+            assertThat(result.hardViolations())
+                    .extracting(HardViolation::type)
+                    .contains("BED_BLOCKED");
+        }
+
+        @Test
+        void shouldAllow_whenBedIsActive() {
+            var room = TestBuilders.aRoom().build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).status(BedStatus.ACTIVE).build();
+            var worker = TestBuilders.aWorker().build();
+            var property = TestBuilders.aProperty().build();
+
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+
+            var result = engine.evaluate(ctx(worker, room, property, bed, null));
+
+            assertThat(result.hardViolations()).noneMatch(v -> v.type().equals("BED_BLOCKED"));
         }
     }
 

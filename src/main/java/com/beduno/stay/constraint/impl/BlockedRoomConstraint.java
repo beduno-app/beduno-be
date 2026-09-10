@@ -1,5 +1,6 @@
 package com.beduno.stay.constraint.impl;
 
+import com.beduno.bed.BedStatus;
 import com.beduno.property.PropertyStatus;
 import com.beduno.room.RoomStatus;
 import com.beduno.stay.constraint.ConstraintContext;
@@ -29,6 +30,16 @@ public class BlockedRoomConstraint implements StayConstraint {
                     "PROPERTY_INACTIVE",
                     "constraint.property.inactive",
                     Map.of("propertyName", ctx.property().getName())
+            ));
+        }
+
+        // Null-guard matches BedOccupancyConstraint: no write path resolves a real bed until
+        // phase 4, see ConstraintContext's Javadoc.
+        if (ctx.bed() != null && ctx.bed().getStatus() == BedStatus.BLOCKED) {
+            hard.add(new HardViolation(
+                    "BED_BLOCKED",
+                    "constraint.bed.blocked",
+                    Map.of("bedLabel", ctx.bed().getLabel())
             ));
         }
     }

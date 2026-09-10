@@ -514,25 +514,25 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 2.1 Compiles: `./gradlew compileJava`
-- [x] 2.2 Room module tests pass: `./gradlew test --tests 'com.beduno.room.*'`
-- [x] 2.3 Constraint engine tests pass (bed-occupied + null-bed no-op cases)
-- [x] 2.4 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
-- [x] 2.5 Full build green, migrations V10-V13 apply cleanly: `./gradlew build`
-- [x] 2.6 No remaining capacity/blockedSpots usage across room/occupancy/stay-constraint source
+- [x] 2.1 Compiles: `./gradlew compileJava` — ce21d1b
+- [x] 2.2 Room module tests pass: `./gradlew test --tests 'com.beduno.room.*'` — ce21d1b
+- [x] 2.3 Constraint engine tests pass (bed-occupied + null-bed no-op cases) — ce21d1b
+- [x] 2.4 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'` — ce21d1b
+- [x] 2.5 Full build green, migrations V10-V13 apply cleanly: `./gradlew build` — ce21d1b
+- [x] 2.6 No remaining capacity/blockedSpots usage across room/occupancy/stay-constraint source — ce21d1b
 
 #### Manual
 
-- [ ] 2.7 Boot against local dev DB and confirm V10-V13 backfill cleanly against seeded data
-- [ ] 2.8 GET an existing room via Swagger and confirm bedCount/availableBedCount replace capacity/blockedSpots/availableSpots
-- [ ] 2.9 Existing Stay API (create/check-in/move) behaves unchanged — bed resolution is inert (null) at this point
+- [x] 2.7 Boot against local dev DB and confirm V10-V13 backfill cleanly against seeded data — ce21d1b
+- [x] 2.8 GET an existing room via Swagger and confirm bedCount/availableBedCount replace capacity/blockedSpots/availableSpots — ce21d1b
+- [x] 2.9 Existing Stay API (create/check-in/move) behaves unchanged — bed resolution is inert (null) at this point — ce21d1b
 
 ### Phase 3: Blocked-bed constraint
 
 #### Automated
 
-- [ ] 3.1 Constraint engine tests pass (bed-blocked case): `./gradlew test --tests 'com.beduno.stay.constraint.*'`
-- [ ] 3.2 Full build green: `./gradlew build`
+- [x] 3.1 Constraint engine tests pass (bed-blocked case): `./gradlew test --tests 'com.beduno.stay.constraint.*'`
+- [x] 3.2 Full build green: `./gradlew build`
 
 ### Phase 4: Stay write-path bed integration
 
