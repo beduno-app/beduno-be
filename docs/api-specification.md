@@ -1080,16 +1080,16 @@ Counts only stays with `status = CHECKED_IN` that span the date (`dateFrom <= da
     "roomId": "uuid",
     "roomNumber": "12",
     "floor": 2,
-    "capacity": 4,
-    "blockedSpots": 0,
+    "bedCount": 4,
+    "availableBedCount": 4,
     "occupiedSpots": 2,
     "occupants": [
-      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko" }
+      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko", "bedId": "uuid", "bedLabel": "2" }
     ]
   }
 ]
 ```
-`OccupantSummary` carries only these four fields — no `internalId`, no `gender`, no dates, no status. Totals and occupancy rates must be computed client-side.
+`OccupantSummary` gained `bedId`/`bedLabel` (11 Sep 2026) so two workers in the same room can be told apart — otherwise it's still just these six fields: no `internalId`, no `gender`, no dates, no status. Totals and occupancy rates must be computed client-side.
 
 ### GET /api/v1/properties/{id}/exceptions
 Rooms that need attention on a date.
@@ -1106,10 +1106,10 @@ Rooms that need attention on a date.
     "roomId": "uuid",
     "roomNumber": "5",
     "exceptionType": "OVER_CAPACITY",
-    "capacity": 4,
-    "blockedSpots": 0,
+    "bedCount": 4,
+    "availableBedCount": 4,
     "occupiedSpots": 5,
-    "occupants": [ { "stayId": "uuid", "workerId": "uuid", "firstName": "Olena", "lastName": "Kovalenko" } ]
+    "occupants": [ { "stayId": "uuid", "workerId": "uuid", "firstName": "Olena", "lastName": "Kovalenko", "bedId": "uuid", "bedLabel": "1" } ]
   }
 ]
 ```
@@ -1118,7 +1118,7 @@ Rooms that need attention on a date.
 
 | Value | Meaning | `occupants[]` contains |
 |-------|---------|------------------------|
-| `OVER_CAPACITY` | checked-in occupants exceed `capacity - blockedSpots` | the checked-in occupants |
+| `OVER_CAPACITY` | checked-in occupants exceed the room's `availableBedCount` (ACTIVE bed count) — a data-integrity safety net over historical/backfilled data; going forward `BedOccupancyConstraint`/the bed-blocked check prevent new violations at write time | the checked-in occupants |
 | `PENDING_ARRIVAL` | at least one `EXPECTED_TODAY` stay for this room, and the room is not over capacity | the expected (not yet arrived) occupants |
 
 At most one entry per room — `OVER_CAPACITY` takes precedence. Rooms with neither condition are omitted. There is no worker-centric `UNASSIGNED_WORKER` exception.
@@ -1133,14 +1133,16 @@ Responses are `Content-Type: text/csv;charset=UTF-8` with `Content-Disposition: 
 
 | Endpoint | Roles | Localized header row |
 |----------|-------|----------------------|
-| `GET /properties/{id}/occupancy/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN | `Room,Floor,Capacity,Blocked,Occupied,WorkerId,FirstName,LastName` |
-| `GET /properties/{id}/arrivals/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, **FRONT_DESK** | `StayId,WorkerId,RoomId,DateFrom,DateTo,Status` |
-| `GET /properties/{id}/exceptions/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN | `Room,ExceptionType,Capacity,Blocked,Occupied,WorkerId,FirstName,LastName` |
+| `GET /properties/{id}/occupancy/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN | `Room,Floor,BedCount,AvailableBedCount,Occupied,Bed,WorkerId,FirstName,LastName` |
+| `GET /properties/{id}/arrivals/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, **FRONT_DESK** | `StayId,WorkerId,RoomId,Bed,DateFrom,DateTo,Status` |
+| `GET /properties/{id}/exceptions/export` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN | `Room,ExceptionType,BedCount,AvailableBedCount,Occupied,Bed,WorkerId,FirstName,LastName` |
+
+> **11 Sep 2026:** `Capacity`/`Blocked` are gone from all three headers — replaced by `BedCount`/`AvailableBedCount`, and every row now carries a `Bed` column with the occupant's bed label (blank for rows with no occupant, and for arrivals rows before phase 4's write-path wiring). See `context/changes/named-beds/plan.md`.
 
 Details:
-- **occupancy export** — one row per occupant; a room with no occupants still emits one row with `Occupied` = `0` and blank worker columns.
-- **arrivals export** — one row per `EXPECTED_TODAY` stay arriving on `date`; `Status` is the localized label (e.g. `Expected Today` / `Oczekiwany dzisiaj`).
-- **exceptions export** — one row per occupant of each exception room; `ExceptionType` is the localized label (`Over Capacity`, `Pending Arrival`). A room-level exception with no occupants emits one row with blank worker columns.
+- **occupancy export** — one row per occupant; a room with no occupants still emits one row with `Occupied` = `0` and blank `Bed`/worker columns.
+- **arrivals export** — one row per `EXPECTED_TODAY` stay arriving on `date`; `Bed` is the stay's bed label; `Status` is the localized label (e.g. `Expected Today` / `Oczekiwany dzisiaj`).
+- **exceptions export** — one row per occupant of each exception room; `ExceptionType` is the localized label (`Over Capacity`, `Pending Arrival`). A room-level exception with no occupants emits one row with blank `Bed`/worker columns.
 
 ---
 
@@ -1162,10 +1164,10 @@ Room-by-room roster to walk the building with.
     "roomNumber": "12",
     "floor": 2,
     "expectedOccupants": [
-      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko" }
+      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko", "bedId": "uuid", "bedLabel": "1" }
     ],
     "checkedInOccupants": [
-      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko" }
+      { "stayId": "uuid", "workerId": "uuid", "firstName": "Andriy", "lastName": "Shevchenko", "bedId": "uuid", "bedLabel": "1" }
     ]
   }
 ]

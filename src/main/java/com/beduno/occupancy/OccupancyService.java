@@ -52,13 +52,15 @@ public class OccupancyService {
         var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
         var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, CHECKED_IN_STATUS);
         var workerMap = loadWorkers(stays, agencyId);
-        var bedCounts = bedCountsByRoom(agencyId, rooms);
+        var beds = loadBeds(agencyId, rooms);
+        var bedCounts = bedCountsByRoom(beds);
+        var bedLabelById = bedLabelById(beds);
 
         var staysByRoom = stays.stream().collect(Collectors.groupingBy(Stay::getRoomId));
 
         return rooms.stream().map(room -> {
             var roomStays = staysByRoom.getOrDefault(room.getId(), List.of());
-            var occupants = toOccupantSummaries(roomStays, workerMap);
+            var occupants = toOccupantSummaries(roomStays, workerMap, bedLabelById);
             var counts = bedCounts.getOrDefault(room.getId(), BedCounts.EMPTY);
             return new RoomOccupancyResponse(
                     room.getId(),
@@ -78,7 +80,9 @@ public class OccupancyService {
         var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
         var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, ACTIVE_STATUSES);
         var workerMap = loadWorkers(stays, agencyId);
-        var bedCounts = bedCountsByRoom(agencyId, rooms);
+        var beds = loadBeds(agencyId, rooms);
+        var bedCounts = bedCountsByRoom(beds);
+        var bedLabelById = bedLabelById(beds);
 
         var checkedInByRoom = stays.stream()
                 .filter(s -> s.getStatus() == StayStatus.CHECKED_IN)
@@ -100,13 +104,13 @@ public class OccupancyService {
                 exceptions.add(new OccupancyExceptionResponse(
                         room.getId(), room.getRoomNumber(), "OVER_CAPACITY",
                         counts.total(), counts.active(), checkedIn.size(),
-                        toOccupantSummaries(checkedIn, workerMap)
+                        toOccupantSummaries(checkedIn, workerMap, bedLabelById)
                 ));
             } else if (!expected.isEmpty()) {
                 exceptions.add(new OccupancyExceptionResponse(
                         room.getId(), room.getRoomNumber(), "PENDING_ARRIVAL",
                         counts.total(), counts.active(), checkedIn.size(),
-                        toOccupantSummaries(expected, workerMap)
+                        toOccupantSummaries(expected, workerMap, bedLabelById)
                 ));
             }
         }
@@ -119,6 +123,7 @@ public class OccupancyService {
         var rooms = roomRepository.findAllByAgencyIdAndPropertyId(agencyId, propertyId);
         var stays = stayRepository.findActiveStaysForPropertyOnDate(agencyId, propertyId, date, ACTIVE_STATUSES);
         var workerMap = loadWorkers(stays, agencyId);
+        var bedLabelById = bedLabelById(loadBeds(agencyId, rooms));
 
         var checkedInByRoom = stays.stream()
                 .filter(s -> s.getStatus() == StayStatus.CHECKED_IN)
@@ -133,8 +138,8 @@ public class OccupancyService {
                     room.getId(),
                     room.getRoomNumber(),
                     room.getFloor(),
-                    toOccupantSummaries(allActive, workerMap),
-                    toOccupantSummaries(checkedIn, workerMap)
+                    toOccupantSummaries(allActive, workerMap, bedLabelById),
+                    toOccupantSummaries(checkedIn, workerMap, bedLabelById)
             );
         }).toList();
     }
@@ -190,13 +195,15 @@ public class OccupancyService {
                 .collect(Collectors.toMap(Worker::getId, w -> w));
     }
 
-    private List<OccupantSummary> toOccupantSummaries(List<Stay> stays, Map<UUID, Worker> workerMap) {
+    private List<OccupantSummary> toOccupantSummaries(List<Stay> stays, Map<UUID, Worker> workerMap,
+                                                        Map<UUID, String> bedLabelById) {
         return stays.stream().map(s -> {
             var w = workerMap.get(s.getWorkerId());
             return new OccupantSummary(
                     s.getId(), s.getWorkerId(),
                     w != null ? w.getFirstName() : null,
-                    w != null ? w.getLastName() : null
+                    w != null ? w.getLastName() : null,
+                    s.getBedId(), bedLabelById.get(s.getBedId())
             );
         }).toList();
     }
@@ -205,14 +212,21 @@ public class OccupancyService {
      * Loaded once per request for the whole property rather than per room, matching how stays and
      * workers are already batched above.
      */
-    private Map<UUID, BedCounts> bedCountsByRoom(UUID agencyId, List<Room> rooms) {
+    private List<Bed> loadBeds(UUID agencyId, List<Room> rooms) {
         if (rooms.isEmpty()) {
-            return Map.of();
+            return List.of();
         }
         var roomIds = rooms.stream().map(Room::getId).collect(Collectors.toSet());
-        return bedRepository.findAllByAgencyIdAndRoomIdIn(agencyId, roomIds).stream()
-                .collect(Collectors.groupingBy(Bed::getRoomId,
-                        Collectors.collectingAndThen(Collectors.toList(), BedCounts::of)));
+        return bedRepository.findAllByAgencyIdAndRoomIdIn(agencyId, roomIds);
+    }
+
+    private Map<UUID, BedCounts> bedCountsByRoom(List<Bed> beds) {
+        return beds.stream().collect(Collectors.groupingBy(Bed::getRoomId,
+                Collectors.collectingAndThen(Collectors.toList(), BedCounts::of)));
+    }
+
+    private Map<UUID, String> bedLabelById(List<Bed> beds) {
+        return beds.stream().collect(Collectors.toMap(Bed::getId, Bed::getLabel));
     }
 
     /** total beds vs. beds not blocked -- the direct translation of the old capacity/blockedSpots pair. */

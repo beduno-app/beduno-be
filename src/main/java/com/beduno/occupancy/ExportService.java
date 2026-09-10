@@ -1,5 +1,7 @@
 package com.beduno.occupancy;
 
+import com.beduno.bed.Bed;
+import com.beduno.bed.BedRepository;
 import com.beduno.stay.StayService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
@@ -7,8 +9,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -16,6 +21,7 @@ public class ExportService {
 
     private final OccupancyService occupancyService;
     private final StayService stayService;
+    private final BedRepository bedRepository;
     private final MessageSource messageSource;
 
     @Transactional(readOnly = true)
@@ -32,7 +38,7 @@ public class ExportService {
                         String.valueOf(room.bedCount()),
                         String.valueOf(room.availableBedCount()),
                         "0",
-                        "", "", ""
+                        "", "", "", ""
                 )).append("\n");
             } else {
                 for (var occupant : room.occupants()) {
@@ -42,6 +48,7 @@ public class ExportService {
                             String.valueOf(room.bedCount()),
                             String.valueOf(room.availableBedCount()),
                             String.valueOf(room.occupiedSpots()),
+                            blankIfNull(occupant.bedLabel()),
                             occupant.workerId().toString(),
                             blankIfNull(occupant.firstName()),
                             blankIfNull(occupant.lastName())
@@ -58,17 +65,30 @@ public class ExportService {
         var sb = new StringBuilder();
         sb.append(msg("export.arrivals.header", locale)).append("\n");
 
-        for (var stay : stayService.getArrivals(propertyId, date)) {
+        var arrivals = stayService.getArrivals(propertyId, date);
+        var bedLabelById = bedLabelById(arrivals.stream().map(a -> a.bedId()).toList());
+
+        for (var stay : arrivals) {
             sb.append(csvRow(
                     stay.id().toString(),
                     stay.workerId().toString(),
                     stay.roomId().toString(),
+                    blankIfNull(bedLabelById.get(stay.bedId())),
                     blankIfNull(stay.dateFrom() != null ? stay.dateFrom().toString() : null),
                     blankIfNull(stay.dateTo() != null ? stay.dateTo().toString() : null),
                     localizedStatus(stay.status().name(), locale)
             )).append("\n");
         }
         return sb.toString();
+    }
+
+    private Map<UUID, String> bedLabelById(List<UUID> bedIds) {
+        var distinctIds = bedIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (distinctIds.isEmpty()) {
+            return Map.of();
+        }
+        return bedRepository.findAllById(distinctIds).stream()
+                .collect(Collectors.toMap(Bed::getId, Bed::getLabel));
     }
 
     @Transactional(readOnly = true)
@@ -86,7 +106,7 @@ public class ExportService {
                         String.valueOf(ex.bedCount()),
                         String.valueOf(ex.availableBedCount()),
                         String.valueOf(ex.occupiedSpots()),
-                        "", "", ""
+                        "", "", "", ""
                 )).append("\n");
             } else {
                 for (var occupant : ex.occupants()) {
@@ -96,6 +116,7 @@ public class ExportService {
                             String.valueOf(ex.bedCount()),
                             String.valueOf(ex.availableBedCount()),
                             String.valueOf(ex.occupiedSpots()),
+                            blankIfNull(occupant.bedLabel()),
                             occupant.workerId().toString(),
                             blankIfNull(occupant.firstName()),
                             blankIfNull(occupant.lastName())

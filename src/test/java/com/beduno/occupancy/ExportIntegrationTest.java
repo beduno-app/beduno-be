@@ -40,7 +40,7 @@ class ExportIntegrationTest extends IntegrationTestBase {
 
             var body = export(property, null);
 
-            assertThat(body).startsWith("Room,Floor,BedCount,AvailableBedCount,Occupied,WorkerId,FirstName,LastName");
+            assertThat(body).startsWith("Room,Floor,BedCount,AvailableBedCount,Occupied,Bed,WorkerId,FirstName,LastName");
         }
 
         @Test
@@ -49,7 +49,7 @@ class ExportIntegrationTest extends IntegrationTestBase {
 
             var body = export(property, "DE");
 
-            assertThat(body).startsWith("Zimmer,Etage,Bettenzahl,VerfuegbareBetten,Belegt,MitarbeiterId,Vorname,Nachname");
+            assertThat(body).startsWith("Zimmer,Etage,Bettenzahl,VerfuegbareBetten,Belegt,Bett,MitarbeiterId,Vorname,Nachname");
             assertThat(body).doesNotContain("export.occupancy.header");
         }
 
@@ -61,7 +61,7 @@ class ExportIntegrationTest extends IntegrationTestBase {
 
             var body = export(property, "UA");
 
-            assertThat(body).startsWith("Кімната,Поверх,КількістьЛіжок,ВільніЛіжка,Зайнято,ІдПрацівника,Ім'я,Прізвище");
+            assertThat(body).startsWith("Кімната,Поверх,КількістьЛіжок,ВільніЛіжка,Зайнято,Ліжко,ІдПрацівника,Ім'я,Прізвище");
         }
 
         @Test

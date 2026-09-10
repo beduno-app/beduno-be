@@ -538,26 +538,26 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 4.1 Compiles: `./gradlew compileJava`
-- [x] 4.2 Stay module tests pass: `./gradlew test --tests 'com.beduno.stay.*'`
-- [x] 4.3 Full build green, migration V14 applies cleanly: `./gradlew build`
-- [x] 4.4 Message bundles complete for the two new codes (MessageBundleTest passes)
+- [x] 4.1 Compiles: `./gradlew compileJava` — edcbb8d
+- [x] 4.2 Stay module tests pass: `./gradlew test --tests 'com.beduno.stay.*'` — edcbb8d
+- [x] 4.3 Full build green, migration V14 applies cleanly: `./gradlew build` — edcbb8d
+- [x] 4.4 Message bundles complete for the two new codes (MessageBundleTest passes) — edcbb8d
 
 #### Manual
 
-- [ ] 4.5 Stay created without bedId auto-assigns the lowest-label free bed, bedAutoAssigned=true
-- [ ] 4.6 Stay created with explicit bedId has bedAutoAssigned=false
-- [ ] 4.7 Move to current bed rejected; move to a different bed in the same room succeeds
-- [ ] 4.8 Audit log records the overrideReason on a created stay (closes the pre-existing create/bulkAssign gap)
-- [ ] 4.9 Two overlapping stays assigned to the same bed via the API return 422 BED_OCCUPIED
-- [ ] 4.10 Assignment to a blocked bed via the API is rejected with BED_BLOCKED even with an overrideReason
+- [x] 4.5 Stay created without bedId auto-assigns the lowest-label free bed, bedAutoAssigned=true — edcbb8d
+- [x] 4.6 Stay created with explicit bedId has bedAutoAssigned=false — edcbb8d
+- [x] 4.7 Move to current bed rejected; move to a different bed in the same room succeeds — edcbb8d
+- [x] 4.8 Audit log records the overrideReason on a created stay (closes the pre-existing create/bulkAssign gap) — edcbb8d
+- [x] 4.9 Two overlapping stays assigned to the same bed via the API return 422 BED_OCCUPIED — edcbb8d
+- [x] 4.10 Assignment to a blocked bed via the API is rejected with BED_BLOCKED even with an overrideReason — edcbb8d
 
 ### Phase 5: Occupancy and export bed-level detail
 
 #### Automated
 
-- [ ] 5.1 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
-- [ ] 5.2 Full build green: `./gradlew build`
+- [x] 5.1 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
+- [x] 5.2 Full build green: `./gradlew build`
 
 #### Manual
 
