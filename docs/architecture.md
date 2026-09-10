@@ -489,7 +489,10 @@ State changes on Stay, Worker, Room and Property produce an `AuditEvent`
 - Filtering via query params (e.g. `?status=CHECKED_IN&propertyId=...`)
 - All timestamps in UTC (ISO 8601); all IDs are UUIDs
 - API versioning via URL prefix: `/api/v1/`
-- OpenAPI served at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`; both are `permitAll`
+- OpenAPI served at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`; both are `permitAll` only
+  while `beduno.security.public-api-docs` is true (the default). The `prod` profile sets it false
+  **and** disables springdoc, so in production the documents are neither served nor anonymous —
+  handing an attacker a map of the API is a deployment choice, not a constant
 
 ## Deployment
 
@@ -513,8 +516,10 @@ One `t4g.small` EC2 instance in `eu-central-1` running three containers under do
   docker volume on the instance's root EBS volume, and `deploy/backup.sh` snapshots that volume —
   there is no replica and no point-in-time recovery
 - `prod` profile reads `DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD`, and
-  `JWT_SECRET` must be supplied; all of them come from SSM Parameter Store via `deploy/boot.sh`,
-  which writes a 0600 env file on every boot
+  `JWT_SECRET` must be supplied. Only the secrets come from SSM Parameter Store, via
+  `deploy/boot.sh`, which writes them into a 0600 env file on every boot; the JDBC URL and
+  username are fixed values in `deploy/docker-compose.prod.yml`, because the database is a
+  container on the same internal network and neither is a secret
 - Caddy terminates TLS (Let's Encrypt, HTTP-01) and is the only container publishing ports;
   `server.forward-headers-strategy: native` is what makes `getRemoteAddr()` the real client
   behind it, which the login throttle and HSTS both depend on

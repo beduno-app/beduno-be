@@ -70,8 +70,10 @@ Read under every profile, and only relevant on a database with no users yet — 
 | `BOOTSTRAP_ADMIN_FIRST_NAME` / `_LAST_NAME` | Default `Agency` / `Admin` |
 | `BOOTSTRAP_ADMIN_LANGUAGE` | Default `PL` |
 
-Enabled with any of the first three missing, or a password under 12 characters, **fails
-startup** — the alternative is an API that answers 401 to everything with no explanation.
+On an empty database, enabled with any of the first three missing, or a password under 12
+characters, **fails startup** — the alternative is an API that answers 401 to everything with no
+explanation. Once a user exists the runner stops before validating, so leftover variables on a
+populated database do nothing.
 
 ---
 
@@ -149,7 +151,9 @@ because there is no user-management API and the migrations seed no rows:
 | `/beduno/prod/BOOTSTRAP_ADMIN_PASSWORD` | SecureString | at least 12 characters |
 
 The runner creates them only when the users table is empty and does nothing on every later start.
-Enabled but incomplete **fails startup** rather than booting into an API nobody can log into.
+On an empty database, enabled but incomplete **fails startup** rather than booting into an API
+nobody can log into. Once a user exists the runner returns before it validates anything, so a
+half-configured `BOOTSTRAP_*` set left behind on a populated database is inert, not fatal.
 
 ### First launch
 
@@ -207,10 +211,18 @@ aws ssm put-parameter --name /beduno/prod/APP_IMAGE --type String --overwrite \
 deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
 ```
 
-**This reverts the image, not the schema.** Flyway migrations that have run stay run, and
-`ddl-auto: validate` will refuse to start older code against a newer schema — a loud failure
-rather than silent corruption, but an outage either way. Keep migrations additive: add columns
-nullable, and never drop or rename one in the same release that stops using it.
+**This reverts the image, not the schema.** Flyway migrations that have run stay run. That is
+usually fine: `ddl-auto: validate` only checks that the tables and columns the older code *maps*
+still exist with compatible types, so extra columns and tables it knows nothing about do not
+bother it, and Flyway tolerates history rows for migrations the older jar does not carry
+(`ignoreMigrationPatterns` defaults to `*:future`). A rollback across purely additive migrations
+starts cleanly.
+
+It fails loudly — refusing to start rather than corrupting anything — when the newer schema
+**dropped or renamed** something the older code still maps. That is the case worth avoiding, and
+it is why migrations should stay additive: add columns nullable, and never drop or rename one in
+the same release that stops using it. A migration that is not additive needs a forward fix, not a
+rollback.
 
 ---
 

@@ -17,8 +17,8 @@ One package per domain module under `src/main/java/com/beduno/` (`auth`, `user`,
 ## Build, Test, and Development Commands
 
 - `docker compose -f docker/docker-compose.yml up -d` — local PostgreSQL.
-- `./gradlew bootRun` — run the API on port 8080; Swagger UI at `/swagger-ui.html`.
-- `./gradlew build` — compile, Checkstyle, and the full test suite. CI (@.github/workflows/ci.yml) runs the same command on every push and pull request; run it yourself before each commit anyway.
+- `SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun` — run the API on port 8080; Swagger UI at `/swagger-ui.html`. The profile matters: `JWT_SECRET` has no default outside `dev`, and startup now fails without it rather than booting with an unusable key.
+- `./gradlew build` — compile, Checkstyle, and the full test suite. CI (@.github/workflows/ci.yml) runs the same command on pull requests and on pushes to `main` — a branch pushed with no PR open gets no run at all, so run it yourself before each commit.
 - `./gradlew test --tests 'com.beduno.stay.constraint.ConstraintEngineTest'` — one class.
 - `deploy/publish.sh`, `deploy/instance.sh`, `deploy/backup.sh` — deploy, lifecycle and snapshots for the single production instance. Runbook in @README.md; never point these at anything but the `beduno-api` instance, whose volume holds the only copy of the database.
 

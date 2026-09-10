@@ -9,7 +9,10 @@
 ## General Conventions
 
 ### Authentication
-All endpoints except `/api/v1/auth/**`, `/actuator/health` and the OpenAPI paths require a JWT Bearer token:
+All endpoints except `/api/v1/auth/login`, `/api/v1/auth/refresh` and `/actuator/health` require a
+JWT Bearer token. `/api/v1/auth/me` is **not** anonymous despite its prefix. The OpenAPI paths are
+anonymous only when `beduno.security.public-api-docs` is true, which it is by default and is not
+under the `prod` profile:
 
 ```
 Authorization: Bearer <token>
@@ -166,7 +169,15 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.constraint.violated`, `error.constraint.soft_violations` | constraint engine (422) |
 | `constraint.*` | individual violations inside `details[]` |
 
-> **Caveat — i18n coverage is partial.** The bundles under `src/main/resources/i18n/` (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_ua`, all five with identical key sets) do **not** contain `error.worker.not_found`, `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`, `error.room.not_found`, `error.room.name_exists` or `error.room.blocked_spots_exceed_capacity`. The backend never resolves these codes itself — it returns the code — so the frontend must supply its own translations for them.
+> **Note — the backend returns codes, not prose.** The bundles under `src/main/resources/i18n/`
+> (`messages`, `_en`, `_pl`, `_de`, `_ru`, `_uk` — six files with identical key sets) define every
+> code the Java sources reference, including `error.worker.not_found`,
+> `error.worker.internal_id_exists`, `error.property.not_found`, `error.property.access_denied`,
+> `error.room.not_found`, `error.room.name_exists` and
+> `error.room.blocked_spots_exceed_capacity`; `MessageBundleTest` fails the build on a missing key,
+> a blank value, or a code referenced from Java but undefined. They are used for CSV export
+> headers. API error responses still carry the **code**, not a translated string, so the frontend
+> supplies its own copy for anything it renders.
 
 ---
 
@@ -294,7 +305,10 @@ Exchange a refresh token for a fresh token pair. Rate limited.
 
 **Response 401:** `error.auth.invalid_refresh_token` — token failed signature/expiry validation, **or** validated but its subject no longer has a user row (deliberately reported as 401, not 404, so it cannot be used to probe for deleted accounts).
 
-> **Caveat.** The endpoint validates the signature but never checks `type == "refresh"`, so a still-valid **access** token is accepted here as a refresh token.
+Access tokens are **not** accepted here. Both token kinds are signed with the same key, so the
+endpoint additionally requires the `type: "refresh"` claim that only refresh tokens carry; an
+access token presented here returns 401. The reverse is refused too — a refresh token sent as a
+bearer credential leaves the request anonymous rather than authenticating it.
 
 ### GET /api/v1/auth/me
 Return the authenticated user's profile, re-read from the database.
@@ -305,7 +319,9 @@ Return the authenticated user's profile, re-read from the database.
 
 **Response 404:** `error.auth.user_not_found` — the token is valid but its subject has no user row.
 
-> **Caveat.** `/api/v1/auth/**` is `permitAll` in `SecurityConfig`, so this path is not protected by the entry point. Calling it with **no** `Authorization` header dereferences a null principal and returns **500**, not 401.
+**Response 401:** no token, or a token that is not an access token. Only `/auth/login` and
+`/auth/refresh` are anonymous; this path falls through to `anyRequest().authenticated()` and is
+answered by the entry point like any other protected endpoint.
 
 ---
 

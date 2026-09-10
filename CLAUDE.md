@@ -9,7 +9,8 @@ Beduno is a worker housing management system for temporary work agencies. Java 2
 ```bash
 ./gradlew compileJava          # Compile
 ./gradlew test                 # All tests (requires Docker for Testcontainers)
-./gradlew bootRun              # Run locally (needs PostgreSQL via docker/docker-compose.yml)
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun   # Run locally (needs PostgreSQL via docker/docker-compose.yml).
+                                              # Without the dev profile there is no JWT_SECRET default and startup fails.
 docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 ```
 
