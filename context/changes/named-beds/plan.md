@@ -568,12 +568,12 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 6.1 Full build green including Checkstyle: `./gradlew build`
-- [x] 6.2 Full test suite passes: `./gradlew test`
-- [x] 6.3 No remaining capacity/blockedSpots references outside V1-V9 migrations
-- [x] 6.4 Cross-agency isolation test passes for bed-touching write paths
+- [x] 6.1 Full build green including Checkstyle: `./gradlew build` — 3397c45
+- [x] 6.2 Full test suite passes: `./gradlew test` — 3397c45
+- [x] 6.3 No remaining capacity/blockedSpots references outside V1-V9 migrations — 3397c45
+- [x] 6.4 Cross-agency isolation test passes for bed-touching write paths — 3397c45
 
 #### Manual
 
-- [x] 6.5 US-01 wave walkthrough end-to-end, bed-level detail confirmed in export and audit log
-- [x] 6.6 Updated docs/api-specification.md handed to the frontend session
+- [x] 6.5 US-01 wave walkthrough end-to-end, bed-level detail confirmed in export and audit log — 3397c45
+- [x] 6.6 Updated docs/api-specification.md handed to the frontend session — 3397c45
