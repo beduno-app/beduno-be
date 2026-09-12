@@ -365,6 +365,28 @@ class ConstraintEngineTest {
         }
 
         @Test
+        void shouldCollectHardAndSoftViolationsTogether_whenBothFire() {
+            var room = TestBuilders.aRoom().genderRule(GenderRule.MALE_ONLY).build();
+            var bed = TestBuilders.aBed().roomId(room.getId()).build();
+            var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
+            var property = TestBuilders.aProperty().build();
+
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(1L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+
+            var result = engine.evaluate(ctx(worker, room, property, bed, null));
+
+            assertThat(result.isAllowed()).isFalse();
+            assertThat(result.hardViolations())
+                    .extracting(HardViolation::type)
+                    .contains("BED_OCCUPIED");
+            assertThat(result.hasWarnings()).isTrue();
+            assertThat(result.softViolations())
+                    .extracting(SoftViolation::type)
+                    .contains("GENDER_MISMATCH");
+        }
+
+        @Test
         void shouldReturnAllowed_whenNoViolations() {
             var room = TestBuilders.aRoom().build();
             var worker = TestBuilders.aWorker().build();

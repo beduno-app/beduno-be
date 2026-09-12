@@ -197,6 +197,40 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
             assertThat(result.created()).isEqualTo(1);
             assertThat(result.errors()).isEqualTo(1);
         }
+
+        @Test
+        void shouldReportBedConflictInResultBody_notHttpStatus() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 1, 0);
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+
+            var checkInDate = LocalDate.now().minusDays(1);
+            createAndCheckInStay(worker1.id(), property.id(), room.id(), checkInDate);
+
+            var request = new BulkAssignRequest(List.of(
+                    new Assignment(worker2.id(), property.id(), room.id(), null,
+                            checkInDate, LocalDate.now().plusDays(5), null)
+            ));
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/bulk-assign", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)),
+                    BulkAssignResult.class
+            );
+
+            // Bulk-assign's outer response is always 200 OK -- a per-item constraint
+            // failure never surfaces as an HTTP-level 422 the way create/update/check-in/
+            // move do. This test documents that current contract as intentional.
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            var result = response.getBody();
+            assertThat(result).isNotNull();
+            var failedResult = result.results().stream()
+                    .filter(r -> "error".equals(r.status()))
+                    .findFirst();
+            assertThat(failedResult).isPresent();
+            assertThat(failedResult.get().errorCode()).isNotBlank();
+        }
     }
 
     @Nested

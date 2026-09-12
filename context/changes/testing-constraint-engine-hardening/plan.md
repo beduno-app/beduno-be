@@ -455,24 +455,24 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 2.1 New BedAssignmentIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
-- [x] 2.2 Full suite still green: `./gradlew test`
-- [x] 2.3 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 2.1 New BedAssignmentIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"` — 7946d49
+- [x] 2.2 Full suite still green: `./gradlew test` — 7946d49
+- [x] 2.3 Full build (incl. Checkstyle) passes: `./gradlew build` — 7946d49
 
 #### Manual
 
-- [x] 2.4 Confirm the boundary test would fail under a flipped comparison operator
+- [x] 2.4 Confirm the boundary test would fail under a flipped comparison operator — 7946d49
 
 ### Phase 3: Combo test, bulk-assign documentation, and cookbook close-out
 
 #### Automated
 
-- [ ] 3.1 New ConstraintEngineTest test passes: `./gradlew test --tests "com.beduno.stay.constraint.ConstraintEngineTest"`
-- [ ] 3.2 New BulkOperationsIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BulkOperationsIntegrationTest"`
-- [ ] 3.3 Full suite still green: `./gradlew test`
-- [ ] 3.4 Full build (incl. Checkstyle) passes: `./gradlew build`
-- [ ] 3.5 test-plan.md §6.1 and §6.6 updated
+- [x] 3.1 New ConstraintEngineTest test passes: `./gradlew test --tests "com.beduno.stay.constraint.ConstraintEngineTest"`
+- [x] 3.2 New BulkOperationsIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BulkOperationsIntegrationTest"`
+- [x] 3.3 Full suite still green: `./gradlew test`
+- [x] 3.4 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 3.5 test-plan.md §6.1 and §6.6 updated
 
 #### Manual
 
-- [ ] 3.6 Confirm the §6.6 note reads as genuinely useful guidance, not a restatement of the phase title
+- [x] 3.6 Confirm the §6.6 note reads as genuinely useful guidance, not a restatement of the phase title
