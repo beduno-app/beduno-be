@@ -1,5 +1,6 @@
 package com.beduno.bed;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -8,12 +9,18 @@ import com.beduno.bed.dto.BedResponse;
 import com.beduno.bed.dto.BulkGenerateBedsRequest;
 import com.beduno.bed.dto.CreateBedRequest;
 import com.beduno.bed.dto.UpdateBedRequest;
+import com.beduno.common.exception.ErrorResponse;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
 import com.beduno.room.GenderRule;
 import com.beduno.room.dto.CreateRoomRequest;
 import com.beduno.room.dto.RoomResponse;
+import com.beduno.stay.dto.CreateStayRequest;
+import com.beduno.stay.dto.StayResponse;
 import com.beduno.user.Role;
+import com.beduno.worker.Gender;
+import com.beduno.worker.dto.CreateWorkerRequest;
+import com.beduno.worker.dto.WorkerResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -139,6 +146,19 @@ class BedIntegrationTest extends IntegrationTestBase {
                     new HttpEntity<>(headers), String.class);
             assertThat(readResponse.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
+
+        @Test
+        void shouldRejectDelete_whenStayReferencesBed() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var bed = createBed(room, "A1");
+            createStay(DEFAULT_AGENCY_ID, room, bed);
+
+            var response = restTemplate.exchange(bedsUrl(room) + "/" + bed.id(), HttpMethod.DELETE,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), ErrorResponse.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody().error()).isEqualTo("CONFLICT");
+        }
     }
 
     @Nested
@@ -193,6 +213,27 @@ class BedIntegrationTest extends IntegrationTestBase {
         return restTemplate.exchange(
                 "/api/v1/properties", HttpMethod.POST,
                 new HttpEntity<>(request, headers), PropertyResponse.class
+        ).getBody();
+    }
+
+    private StayResponse createStay(UUID agencyId, RoomResponse room, BedResponse bed) {
+        var worker = createWorker(agencyId);
+        var request = new CreateStayRequest(worker.id(), room.propertyId(), room.id(), bed.id(),
+                LocalDate.now().plusDays(1), LocalDate.now().plusDays(8), null, null);
+        return restTemplate.exchange(
+                "/api/v1/stays", HttpMethod.POST,
+                new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, agencyId)), StayResponse.class
+        ).getBody();
+    }
+
+    private WorkerResponse createWorker(UUID agencyId) {
+        var request = new CreateWorkerRequest(
+                "W-" + UUID.randomUUID().toString().substring(0, 8),
+                "First", "Last", Gender.MALE, null, null, null, null, null, null
+        );
+        return restTemplate.exchange(
+                "/api/v1/workers", HttpMethod.POST,
+                new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, agencyId)), WorkerResponse.class
         ).getBody();
     }
 }

@@ -25,6 +25,9 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
     /** Counts every stay referencing a room, for the same reason as above. */
     long countByAgencyIdAndRoomId(UUID agencyId, UUID roomId);
 
+    /** Counts every stay referencing a bed, for the same reason as above -- stays.bed_id is a RESTRICT foreign key. */
+    long countByAgencyIdAndBedId(UUID agencyId, UUID bedId);
+
     @Query(value = """
             SELECT * FROM stays s
             WHERE s.agency_id = :agencyId

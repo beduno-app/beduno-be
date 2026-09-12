@@ -20,7 +20,6 @@ import com.beduno.worker.Gender;
 import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.WorkerResponse;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
@@ -89,12 +88,8 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         }
 
-        @Disabled("Room-level capacity is retired; BedOccupancyConstraint is a "
-                + "no-op until phase 4 wires bed resolution into StayService.create -- see the "
-                + "named-beds plan's Critical Implementation Details. Re-enable as a bed-occupied "
-                + "equivalent in phase 4.")
         @Test
-        void shouldReturnHardViolation_whenRoomAtCapacity() {
+        void shouldReturnHardViolation_whenNoFreeBedInRoom() {
             var worker1 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var worker2 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);

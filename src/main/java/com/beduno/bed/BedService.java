@@ -19,6 +19,7 @@ import com.beduno.common.security.TenantContext;
 import com.beduno.property.PropertyService;
 import com.beduno.room.Room;
 import com.beduno.room.RoomRepository;
+import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class BedService {
     private final RoomRepository roomRepository;
     private final PropertyService propertyService;
     private final AuditService auditService;
+    private final StayRepository stayRepository;
 
     @Transactional(readOnly = true)
     public List<BedResponse> findAllByRoomId(UUID propertyId, UUID roomId) {
@@ -123,16 +125,16 @@ public class BedService {
         return bedMapper.toResponse(bed);
     }
 
-    /**
-     * No stay-reference guard yet: stays.bed_id doesn't exist until phase 2, so nothing can
-     * possibly reference a bed at this point in the migration sequence. The real guard (mirroring
-     * RoomService.delete) lands once that column and its RESTRICT foreign key exist.
-     */
     @Transactional
     public void delete(UUID propertyId, UUID roomId, UUID bedId) {
         var agencyId = TenantContext.requireAgencyId();
         getRoomOrThrow(propertyId, roomId, agencyId);
         var bed = getBedOrThrow(roomId, bedId, agencyId);
+
+        // stays.bed_id is a RESTRICT foreign key -- mirrors RoomService.delete's guard.
+        if (stayRepository.countByAgencyIdAndBedId(agencyId, bedId) > 0) {
+            throw new ConflictException("error.bed.has_stays");
+        }
 
         var previous = snapshot(bed);
         bedRepository.delete(bed);

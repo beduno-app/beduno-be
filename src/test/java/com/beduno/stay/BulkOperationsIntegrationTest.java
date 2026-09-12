@@ -23,7 +23,6 @@ import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.WorkerImportResult;
 import com.beduno.worker.dto.WorkerResponse;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
@@ -168,10 +167,6 @@ class BulkOperationsIntegrationTest extends IntegrationTestBase {
             assertThat(result.results()).allMatch(r -> "created".equals(r.status()));
         }
 
-        @Disabled("Room-level capacity is retired; BedOccupancyConstraint is a "
-                + "no-op until phase 4 wires bed resolution into StayService.bulkAssign -- see the "
-                + "named-beds plan's Critical Implementation Details. Re-enable as a bed-occupied "
-                + "equivalent in phase 4.")
         @Test
         void shouldReturnPartialSuccess_whenSomeAssignmentsFail() {
             var property = createProperty();

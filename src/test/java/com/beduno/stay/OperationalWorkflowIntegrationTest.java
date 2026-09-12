@@ -224,7 +224,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         }
 
         @Test
-        void shouldRejectMove_whenSameRoom() {
+        void shouldRejectMove_whenSameBed() {
             var worker = createWorker();
             var property = createProperty();
             var room = createRoom(property.id(), 4, 0);
@@ -233,11 +233,32 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(room.id(), stay.bedId(), null), authHeaders(Role.PROPERTY_ADMIN)),
                     String.class
             );
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        }
+
+        @Test
+        void shouldMoveToNewBed_whenSameRoomDifferentBed() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+            var beds = listBeds(property.id(), room.id());
+            var otherBed = beds.stream().filter(b -> !b.id().equals(stay.bedId())).findFirst().orElseThrow();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(room.id(), otherBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().roomId()).isEqualTo(room.id());
+            assertThat(response.getBody().bedId()).isEqualTo(otherBed.id());
         }
     }
 
@@ -523,6 +544,14 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         ).getBody();
         generateBeds(propertyId, room.id(), bedCount, blockedBedCount);
         return room;
+    }
+
+    private List<BedResponse> listBeds(UUID propertyId, UUID roomId) {
+        return restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/rooms/" + roomId + "/beds", HttpMethod.GET,
+                new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                new ParameterizedTypeReference<List<BedResponse>>() {}
+        ).getBody();
     }
 
     private void generateBeds(UUID propertyId, UUID roomId, int bedCount, int blockedBedCount) {

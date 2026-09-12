@@ -1,7 +1,7 @@
 # Beduno Backend - Architecture
 
-> Reconciled against the implementation on 2026-08-09. Everything below was verified against
-> `src/main/java/com/beduno/**`, `src/main/resources/db/migration/V1..V7`, `application*.yml`,
+> Reconciled against the implementation on 2026-09-11. Everything below was verified against
+> `src/main/java/com/beduno/**`, `src/main/resources/db/migration/V1..V14`, `application*.yml`,
 > `logback-spring.xml`, `build.gradle.kts`, and `docker/`.
 
 ## Technology Stack
@@ -115,7 +115,7 @@ beduno-be/
 │   │   │   │       └── UpdatePropertyRequest.java
 │   │   │   ├── room/                          # top-level module, not nested under property/
 │   │   │   │   ├── GenderRule.java
-│   │   │   │   ├── Room.java
+│   │   │   │   ├── Room.java                  # no longer carries capacity/blockedSpots (V13)
 │   │   │   │   ├── RoomController.java
 │   │   │   │   ├── RoomMapper.java
 │   │   │   │   ├── RoomRepository.java
@@ -123,8 +123,21 @@ beduno-be/
 │   │   │   │   ├── RoomStatus.java
 │   │   │   │   └── dto/
 │   │   │   │       ├── CreateRoomRequest.java
-│   │   │   │       ├── RoomResponse.java
+│   │   │   │       ├── RoomOccupant.java
+│   │   │   │       ├── RoomResponse.java      # bedCount/availableBedCount, not capacity/blockedSpots
 │   │   │   │       └── UpdateRoomRequest.java
+│   │   │   ├── bed/                           # top-level module, nested under room in the URL space
+│   │   │   │   ├── Bed.java
+│   │   │   │   ├── BedController.java
+│   │   │   │   ├── BedMapper.java
+│   │   │   │   ├── BedRepository.java
+│   │   │   │   ├── BedService.java
+│   │   │   │   ├── BedStatus.java             # ACTIVE | BLOCKED
+│   │   │   │   └── dto/
+│   │   │   │       ├── BedResponse.java
+│   │   │   │       ├── BulkGenerateBedsRequest.java
+│   │   │   │       ├── CreateBedRequest.java
+│   │   │   │       └── UpdateBedRequest.java
 │   │   │   ├── stay/
 │   │   │   │   ├── Stay.java
 │   │   │   │   ├── StayController.java
@@ -134,7 +147,7 @@ beduno-be/
 │   │   │   │   ├── StayService.java          # lifecycle + bulkAssign()/bulkCheckout()
 │   │   │   │   ├── StayStatus.java           # holds the transition table
 │   │   │   │   ├── constraint/
-│   │   │   │   │   ├── ConstraintContext.java
+│   │   │   │   │   ├── ConstraintContext.java # worker, room, property, dateFrom, dateTo, excludeStayId, bed
 │   │   │   │   │   ├── ConstraintEngine.java
 │   │   │   │   │   ├── ConstraintResult.java
 │   │   │   │   │   ├── HardViolation.java
@@ -142,8 +155,8 @@ beduno-be/
 │   │   │   │   │   ├── StayConstraint.java
 │   │   │   │   │   ├── Violation.java        # sealed, permits Hard/SoftViolation
 │   │   │   │   │   └── impl/
-│   │   │   │   │       ├── BlockedRoomConstraint.java
-│   │   │   │   │       ├── CapacityConstraint.java
+│   │   │   │   │       ├── BedOccupancyConstraint.java  # replaces CapacityConstraint (V13)
+│   │   │   │   │       ├── BlockedRoomConstraint.java   # room BLOCKED/property INACTIVE, plus bed BLOCKED
 │   │   │   │   │       ├── DoubleBookingConstraint.java
 │   │   │   │   │       └── GenderConstraint.java
 │   │   │   │   └── dto/
@@ -153,10 +166,10 @@ beduno-be/
 │   │   │   │       ├── BulkCheckoutResult.java
 │   │   │   │       ├── CheckInRequest.java
 │   │   │   │       ├── CheckOutRequest.java
-│   │   │   │       ├── CreateStayRequest.java
-│   │   │   │       ├── MoveRequest.java
+│   │   │   │       ├── CreateStayRequest.java  # bedId
+│   │   │   │       ├── MoveRequest.java        # targetBedId
 │   │   │   │       ├── NoShowRequest.java
-│   │   │   │       ├── StayResponse.java
+│   │   │   │       ├── StayResponse.java       # bedId, bedAutoAssigned
 │   │   │   │       ├── StaySummary.java
 │   │   │   │       └── UpdateStayRequest.java
 │   │   │   ├── occupancy/
@@ -197,7 +210,13 @@ beduno-be/
 │   │       │   ├── V5__create_stays.sql
 │   │       │   ├── V6__create_audit_events.sql
 │   │       │   ├── V7__add_stay_no_show_reason.sql
-│   │       │   └── V8__unique_user_email.sql
+│   │       │   ├── V8__unique_user_email.sql
+│   │       │   ├── V9__room_contract_alignment.sql
+│   │       │   ├── V10__create_beds.sql
+│   │       │   ├── V11__add_stay_bed.sql
+│   │       │   ├── V12__backfill_beds.sql
+│   │       │   ├── V13__drop_room_capacity.sql
+│   │       │   └── V14__require_stay_bed.sql
 │   │       └── i18n/
 │   │           ├── messages.properties
 │   │           ├── messages_pl.properties
@@ -213,12 +232,17 @@ beduno-be/
 │           ├── auth/
 │           │   ├── AuthIntegrationTest.java
 │           │   └── JwtTokenProviderTest.java
+│           ├── bed/
+│           │   └── BedIntegrationTest.java
 │           ├── property/
 │           │   ├── DeletionGuardIntegrationTest.java
 │           │   └── PropertyIntegrationTest.java
 │           ├── room/
-│           │   └── RoomIntegrationTest.java
+│           │   ├── RoomIntegrationTest.java
+│           │   ├── RoomOccupantsIntegrationTest.java
+│           │   └── RoomSortIntegrationTest.java
 │           ├── stay/
+│           │   ├── BedAssignmentIntegrationTest.java
 │           │   ├── BulkOperationsIntegrationTest.java
 │           │   ├── OperationalWorkflowIntegrationTest.java
 │           │   ├── StayGuardIntegrationTest.java
@@ -242,17 +266,19 @@ beduno-be/
      ├──────────<│ Property │           │
      │           └──────────┘           │
      │                │ property_id     │
-     │           ┌──────────┐     ┌──────────┐
-     ├──────────<│   Room   │<────│   Stay   │>──── property_id
-     │           └──────────┘     └──────────┘
-     │
+     │           ┌──────────┐     ┌──────────┐     ┌──────────┐
+     ├──────────<│   Room   │<───<│   Bed    │<────│   Stay   │>──── property_id
+     │           └──────────┘     └──────────┘     └──────────┘
+     │                                                   │ bed_id (NOT NULL, V14)
      │           ┌─────────────┐
      └──────────<│ AuditEvent  │   (polymorphic: entity_type + entity_id,
                  └─────────────┘    no FK to the audited row)
 ```
 
-Rooms carry both `property_id` and their own `agency_id`. Stays carry `agency_id`,
-`worker_id`, `property_id`, and `room_id`. Audit events reference the audited entity
+Rooms carry both `property_id` and their own `agency_id`. Beds belong to exactly one room
+(RESTRICT FK — a room with beds cannot be deleted, see "Deletion guards"). Stays carry
+`agency_id`, `worker_id`, `property_id`, `room_id`, and — since `V14` — a mandatory `bed_id`:
+every stay occupies a specific bed, not just a room. Audit events reference the audited entity
 loosely by `entity_type` + `entity_id` — there is no foreign key back to it.
 
 ### Key Tables
@@ -288,17 +314,22 @@ properties (
 
 rooms (
     id, agency_id, property_id, name, floor,
-    capacity INT NOT NULL DEFAULT 1,
-    blocked_spots INT NOT NULL DEFAULT 0,
     gender_rule VARCHAR(20) NOT NULL DEFAULT 'ANY',   -- ANY | MALE_ONLY | FEMALE_ONLY
     status DEFAULT 'ACTIVE', notes,
-    UNIQUE (property_id, name),                        -- uq_rooms_property_name
-    CHECK (capacity > 0),                              -- chk_rooms_capacity
-    CHECK (blocked_spots >= 0 AND blocked_spots <= capacity)  -- chk_rooms_blocked_spots
+    UNIQUE (property_id, name)                          -- uq_rooms_property_name
+)   -- capacity/blocked_spots dropped in V13; occupancy is now derived from beds
+
+beds (
+    id, agency_id, room_id, label,
+    status DEFAULT 'ACTIVE',   -- ACTIVE | BLOCKED
+    UNIQUE (room_id, label),   -- uq_beds_room_label
+    FK room_id -> rooms (RESTRICT)   -- a room with beds cannot be deleted
 )
 
 stays (
     id, agency_id, worker_id, property_id, room_id,
+    bed_id NOT NULL,                      -- V11 (nullable) -> V14 (NOT NULL, once every write path guarantees a value)
+    bed_auto_assigned BOOLEAN NOT NULL DEFAULT false,
     date_from DATE NOT NULL, date_to DATE,
     status DEFAULT 'PLANNED',
     override_reason,          -- set when a soft constraint was overridden
@@ -402,19 +433,27 @@ invokes it on stay create, update, check-in, move, and each item of a bulk assig
 ```
 StayService
   └─> ConstraintEngine.evaluate(ConstraintContext)
-        ├─> CapacityConstraint       (hard)  room full / overlapping stays >= available spots
+        ├─> BedOccupancyConstraint   (hard)  the target bed already has an overlapping active stay
         ├─> DoubleBookingConstraint  (hard)  worker already has an overlapping active stay
-        ├─> BlockedRoomConstraint    (hard)  room BLOCKED or property INACTIVE
+        ├─> BlockedRoomConstraint    (hard)  room BLOCKED, property INACTIVE, or bed BLOCKED
         └─> GenderConstraint         (soft)  room gender_rule vs worker gender
 
   Returns: ConstraintResult { hardViolations[], softViolations[] }
            isAllowed() == hardViolations.isEmpty()
 ```
 
-`ConstraintContext` carries `worker`, `room`, `property`, `dateFrom`, `dateTo`, and an optional
-`excludeStayId` so a stay being edited does not conflict with itself. `Violation` is a sealed
-interface permitting `HardViolation` and `SoftViolation`; both carry a `type`, an i18n
-`message` code, and a `params` map.
+`ConstraintContext` carries `worker`, `room`, `property`, `dateFrom`, `dateTo`, an optional
+`excludeStayId` so a stay being edited does not conflict with itself, and `bed` — the resolved
+bed for this write, or `null` on paths that haven't resolved one (`BedOccupancyConstraint` and
+the bed-status check in `BlockedRoomConstraint` are both no-ops when `bed` is null). `Violation`
+is a sealed interface permitting `HardViolation` and `SoftViolation`; both carry a `type`, an
+i18n `message` code, and a `params` map.
+
+`StayService.resolveBed(...)` decides which bed a write occupies before the engine ever runs:
+an explicit `bedId` is validated for room membership only (all enforcement is deferred to the
+engine call that follows); auto-assign iterates the room's `ACTIVE` beds sorted by label and
+picks the first one the engine allows, or throws with the first candidate's hard violations
+(or a synthesized `BED_UNAVAILABLE` if the room has no beds at all).
 
 - **Hard violation**: rejected with 422, always
 - **Soft violation**: rejected with 422 unless the caller supplies `overrideReason`. There is no
@@ -446,7 +485,10 @@ deletes with 409 rather than letting the database fail with a 500:
 
 - Property delete -> 409 if it still has rooms (`error.property.has_rooms`) or any stay
   references it (`error.property.has_stays`); otherwise it is a **hard** delete
-- Room delete -> 409 if any stay references it (`error.room.has_stays`); otherwise hard delete
+- Room delete -> 409 if any stay references it (`error.room.has_stays`) or it still has beds
+  (`error.room.has_beds`, `beds.room_id` is a RESTRICT FK); otherwise hard delete
+- Bed delete -> hard delete; no guard against stays referencing it, since `stays.bed_id` is
+  `NOT NULL` (V14) and every stay-write path re-resolves a bed through `StayService.resolveBed`
 - Worker delete -> **soft**: `status = DELETED` plus `deleted_at`; every worker query excludes
   `DELETED`
 - Stay "delete" is a cancel: `status = CANCELLED`

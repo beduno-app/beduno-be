@@ -52,7 +52,7 @@ Not every list endpoint is paginated — arrivals, occupancy, exceptions and the
 | `GET /workers` | `firstName`, `lastName`, `internalId`, `status`, `gender`, `nationality`, `dateOfBirth`, `createdAt`, `updatedAt` | `lastName,asc` |
 | `GET /properties` | `name`, `address`, `city`, `status`, `createdAt`, `updatedAt` | `name,asc` |
 | `GET /stays` | `dateFrom`, `dateTo`, `status`, `createdAt`, `updatedAt` | `dateFrom,desc` |
-| `GET /properties/{id}/rooms` | `roomNumber`, `floor`, `capacity`, `blockedSpots`, `genderRule`, `status`, `createdAt`, `updatedAt` | `roomNumber,asc` |
+| `GET /properties/{id}/rooms` | `roomNumber`, `floor`, `genderRule`, `status`, `createdAt`, `updatedAt` | `roomNumber,asc` |
 | `GET /audit` | `createdAt`, `entityType`, `entityId`, `action`, `actorUserId` | `createdAt,desc` |
 
 ### Error Response
@@ -79,7 +79,7 @@ A `@Valid` failure returns `VALIDATION_ERROR` / `error.validation.failed` and pu
   "message": "error.validation.failed",
   "details": [
     { "error": "email", "message": "must not be blank", "timestamp": "2026-04-14T12:00:00Z" },
-    { "error": "capacity", "message": "must be greater than or equal to 1", "timestamp": "2026-04-14T12:00:00Z" }
+    { "error": "count", "message": "must be greater than or equal to 1", "timestamp": "2026-04-14T12:00:00Z" }
   ],
   "timestamp": "2026-04-14T12:00:00Z"
 }
@@ -133,12 +133,13 @@ returned with **429**. No `Retry-After` header is sent.
 Tenant isolation is automatic. `TenantFilter` reads `agencyId` from the JWT into a ThreadLocal and every repository query filters on it. The frontend never sends `agencyId`. A resource belonging to another agency is indistinguishable from a missing one — both give 404.
 
 ### Property scoping — read this
-The original specification described "own property" scoping on roughly ten endpoints. In the implementation `CurrentUser.hasPropertyAccess` is called in exactly **two** places:
+The original specification described "own property" scoping on roughly ten endpoints. In the implementation `CurrentUser.hasPropertyAccess` is called in these places:
 
 - `PUT /api/v1/properties/{id}` — a `PROPERTY_ADMIN` must have the property in its assigned list
 - `POST` and `PUT` on `/api/v1/properties/{propertyId}/rooms` — same check
+- `POST` (single and `bulk-generate`) and `PUT` on `/api/v1/properties/{propertyId}/rooms/{roomId}/beds` — same check (`named-beds` change, 11 Sep 2026); `DELETE` on beds is **not** scoped this way — it is `AGENCY_ADMIN`-only regardless of assignment
 
-**Everywhere else, access is agency-wide.** A `FRONT_DESK` or `PROPERTY_ADMIN` user can read and act on stays, workers, occupancy, arrivals and inspections for *any* property in their agency, regardless of `assignedPropertyIds`. Both scoped checks fail with **403 `error.property.access_denied`**.
+**Everywhere else, access is agency-wide.** A `FRONT_DESK` or `PROPERTY_ADMIN` user can read and act on stays, workers, occupancy, arrivals and inspections for *any* property in their agency, regardless of `assignedPropertyIds`. All scoped checks fail with **403 `error.property.access_denied`**.
 
 ### Full message-code list
 
@@ -163,6 +164,7 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.room.has_stays`, `error.room.has_beds` | `DELETE .../rooms/{id}` (409) |
 | `error.bed.not_found` | bed lookups (404) |
 | `error.bed.label_exists` | bed create/update (409) |
+| `error.bed.has_stays` | `DELETE .../beds/{id}` (409) |
 | `error.bed.not_in_room` | stay write with a `bedId`/`targetBedId` outside the target room (400) |
 | `error.stay.not_found` | stay lookups (404) |
 | `error.stay.cannot_update_in_current_status` | `PUT /stays/{id}` (409) |
@@ -245,7 +247,7 @@ CREATED | UPDATED | DELETED | CHECKED_IN | CHECKED_OUT | NO_SHOW | CANCELLED | M
 
 ### AuditEntityType
 ```
-STAY | WORKER | ROOM | PROPERTY
+STAY | WORKER | ROOM | PROPERTY | BED
 ```
 
 ---
@@ -688,7 +690,82 @@ Setting `status: BLOCKED` makes the constraint engine reject any new or moved st
 
 ---
 
-## 5. Stays
+## 5. Beds
+
+> **New in the `named-beds` change (11 Sep 2026).** Beds are the unit of placement a stay occupies. All bed endpoints are nested two levels deep: `/api/v1/properties/{propertyId}/rooms/{roomId}/beds`. Every one of them first resolves the property, then the room, and returns **404 `error.property.not_found`** / **404 `error.room.not_found`** accordingly.
+
+Beds are identified by **`label`** (a string, unique per room — `"1"`, `"2"`, `"top bunk"`). Bulk-generated labels are sequential integers continuing after the room's current highest *numeric* label, so renaming bed `"2"` to `"top bunk"` and generating one more gives `"2"` again, not `"3"`.
+
+### GET /api/v1/properties/{propertyId}/rooms/{roomId}/beds
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
+
+**Response 200:** `BedResponse[]`
+
+### GET /api/v1/properties/{propertyId}/rooms/{roomId}/beds/{bedId}
+**Roles:** all four, agency-wide
+
+**Response 200:** `BedResponse` · **404:** `error.bed.not_found` (the bed must belong to that room)
+
+### POST /api/v1/properties/{propertyId}/rooms/{roomId}/beds
+**Roles:** AGENCY_ADMIN, PROPERTY_ADMIN — a `PROPERTY_ADMIN` must have the property in `assignedPropertyIds`, else **403 `error.property.access_denied`**
+
+**Request:**
+```json
+{ "label": "1" }
+```
+
+**Response 201:** `BedResponse` · **409:** `error.bed.label_exists` — another bed in this room already has that label
+
+### POST /api/v1/properties/{propertyId}/rooms/{roomId}/beds/bulk-generate
+Adds `count` sequentially numbered beds, continuing after the room's current highest numeric label (existing non-numeric labels, e.g. `"top bunk"`, are ignored for numbering purposes but still block a collision).
+
+**Roles:** same as create
+
+**Request:**
+```json
+{ "count": 4 }
+```
+
+**Response 201:** `BedResponse[]`
+
+### PUT /api/v1/properties/{propertyId}/rooms/{roomId}/beds/{bedId}
+**Full replace.** `label` is `@NotBlank` and `status` is `@NotNull` — both required.
+
+**Roles:** same as create
+
+**Request:**
+```json
+{ "label": "1", "status": "BLOCKED" }
+```
+
+**Response 200:** `BedResponse` · **409:** `error.bed.label_exists` (only when the label actually changes)
+
+Setting `status: BLOCKED` removes the bed from auto-assign candidates and makes the constraint engine reject any new or moved stay explicitly placed into it with a hard `BED_BLOCKED` violation. It does not evict an existing occupant.
+
+### DELETE /api/v1/properties/{propertyId}/rooms/{roomId}/beds/{bedId}
+**Hard delete.**
+
+**Roles:** AGENCY_ADMIN **only**
+
+**Response 204**
+
+**Response 409:** `error.bed.has_stays` — **any** stay references the bed, including cancelled, no-show and checked-out ones (`stays.bed_id` is a `RESTRICT` foreign key).
+
+### BedResponse
+```json
+{
+  "id": "uuid",
+  "roomId": "uuid",
+  "label": "1",
+  "status": "ACTIVE",
+  "createdAt": "2026-04-01T08:00:00Z",
+  "updatedAt": "2026-04-01T08:00:00Z"
+}
+```
+
+---
+
+## 6. Stays
 
 > **11 Sep 2026:** Every stay write (`POST`, `PUT`, check-in, move, bulk-assign) now accepts an optional bed override — `bedId` (`targetBedId` on move) — alongside its room. Omit it and the system auto-assigns the lowest-label free bed in the room; supply it to place the worker in that exact bed. Every stay read now reports `bedId` and `bedAutoAssigned`. See `V11`-`V14` and `context/changes/named-beds/plan.md`.
 
@@ -728,7 +805,7 @@ Create a planned stay. Runs the constraint engine.
 ```
 `workerId`, `propertyId`, `roomId`, `dateFrom` are `@NotNull`. `bedId` is optional — omit it and the system auto-assigns the lowest-label free `ACTIVE` bed in the room (`bedAutoAssigned: true` on the response); supply it to place the worker in that exact bed (`bedAutoAssigned: false`). `dateTo` is optional — `null` means open-ended. `overrideReason` and `notes` are optional free text.
 
-Supplying any non-null `overrideReason` suppresses **soft** violations (see §6). It never suppresses hard ones.
+Supplying any non-null `overrideReason` suppresses **soft** violations (see §7). It never suppresses hard ones.
 
 **Response 201:** `StayResponse` with `status: "PLANNED"` (no `Location` header)
 
@@ -741,7 +818,7 @@ Supplying any non-null `overrideReason` suppresses **soft** violations (see §6)
 > **Caveat.** Nothing validates that `dateTo > dateFrom`, nor that `roomId` belongs to `propertyId`. A bad date pair trips the `chk_stays_dates` database CHECK and surfaces as **500**; a room from another property in the same agency is accepted and silently creates an inconsistent stay.
 
 ### PUT /api/v1/stays/{id}
-**Full replace** of the mutable fields. Re-runs the constraint engine, excluding this stay from its own capacity and double-booking counts.
+**Full replace** of the mutable fields. Re-runs the constraint engine, excluding this stay from its own bed-occupancy and double-booking counts.
 
 **Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN
 
@@ -809,7 +886,7 @@ Create many planned stays in one call. Never fails as a whole — each assignmen
 > **Caveat.** Per-item failures are caught inside a single `@Transactional` method. A failure originating in the persistence layer can mark the transaction rollback-only, in which case the whole batch is lost despite the response reporting partial success. Non-business exceptions also leak their raw English message into `errorCode`.
 
 ### POST /api/v1/stays/bulk-checkout
-See §8.
+See §9.
 
 ### StayResponse
 **Flat — all references are bare UUIDs.** There are no nested `worker`/`property`/`room` objects and no `createdBy`/`confirmedBy`.
@@ -838,7 +915,7 @@ See §8.
 
 ---
 
-## 6. Constraint Violations
+## 7. Constraint Violations
 
 When the constraint engine rejects a stay operation the API returns **422** with the standard `ErrorResponse` envelope. There is no bespoke body: no `allowed`, no `hardViolations`/`softViolations` arrays, no `overridable` flag.
 
@@ -848,10 +925,10 @@ When the constraint engine rejects a stay operation the API returns **422** with
   "message": "error.constraint.violated",
   "details": [
     {
-      "type": "CAPACITY_EXCEEDED",
+      "type": "BED_OCCUPIED",
       "field": null,
-      "message": "constraint.room.capacity.exceeded",
-      "params": { "roomNumber": "12", "capacity": 4, "occupied": 4 }
+      "message": "constraint.bed.occupied",
+      "params": { "bedLabel": "1", "roomNumber": "12" }
     }
   ],
   "timestamp": "2026-04-14T12:00:00Z"
@@ -896,7 +973,7 @@ The engine runs on: `POST /stays`, `PUT /stays/{id}`, `POST /stays/{id}/check-in
 
 ---
 
-## 7. Arrivals Workflow
+## 8. Arrivals Workflow
 
 ### GET /api/v1/stays/arrivals
 Expected arrivals for one property on one date.
@@ -978,7 +1055,7 @@ There is no `notes` field on this request.
 
 ---
 
-## 8. Check-out & Move
+## 9. Check-out & Move
 
 ### POST /api/v1/stays/{id}/check-out
 **Roles:** PROPERTY_ADMIN, FRONT_DESK
@@ -1057,9 +1134,9 @@ Mechanics:
 
 ---
 
-## 9. Occupancy
+## 10. Occupancy
 
-All endpoints in this section and §10 are mounted under `/api/v1/properties/{propertyId}`.
+All endpoints in this section and §11 are mounted under `/api/v1/properties/{propertyId}`.
 
 > **Caveat.** None of them verifies that the property exists. An unknown or foreign `propertyId` returns an **empty array** (or a header-only CSV), not 404.
 
@@ -1146,7 +1223,7 @@ Details:
 
 ---
 
-## 10. Inspection Mode
+## 11. Inspection Mode
 
 ### GET /api/v1/properties/{id}/inspection
 Room-by-room roster to walk the building with.
@@ -1222,7 +1299,7 @@ Rooms with no discrepancies are omitted. `hasDiscrepancies` is simply `discrepan
 
 ---
 
-## 11. Audit Log
+## 12. Audit Log
 
 ### GET /api/v1/audit
 Query the immutable audit trail. Always scoped to the caller's agency.
@@ -1256,7 +1333,8 @@ Query the immutable audit trail. Always scoped to the caller's agency.
 - `previousState` / `newState` are free-form JSON snapshots and may be `null` (create events have no previous state, delete events have no new state). Their keys differ per entity type:
   - **STAY:** `status`, `workerId`, `roomId`, `propertyId`, `dateFrom`, and `dateTo`/`noShowReason` when set
   - **WORKER:** `status`, `internalId`, `firstName`, `lastName`, `gender`
-  - **ROOM:** `name`, `status`, `capacity`, `blockedSpots`, `genderRule`
+  - **ROOM:** `roomNumber`, `status`, `genderRule`
+  - **BED:** `roomId`, `label`, `status`
   - **PROPERTY:** `name`, `status`, and `city` when set
 - `reason` is populated only from: stay update / check-in / move `overrideReason`, no-show `noShowReason`, and the literal `"bulk_import"` on workers created by CSV import. It is `null` everywhere else. There is no separate `notes` or reason-tag field.
 
@@ -1287,7 +1365,7 @@ Everything below appeared in the original specification and **is not built**. Th
 | Was specified as | Status |
 |------------------|--------|
 | `PropertyType` (`INTERNAL` \| `PARTNER`) | **Not built.** There is no `PropertyType` enum, no `type` column on `properties`, no `type` field on any request or response, and no `?type=` filter. |
-| `StayStatus.MOVED` | **Not built.** `StayStatus` has no `MOVED` constant. A move sets the original stay to `CHECKED_OUT` and creates a new `CHECKED_IN` stay (§8). `MOVED` exists only as an **`AuditAction`**, recorded against the new stay. |
+| `StayStatus.MOVED` | **Not built.** `StayStatus` has no `MOVED` constant. A move sets the original stay to `CHECKED_OUT` and creates a new `CHECKED_IN` stay (§9). `MOVED` exists only as an **`AuditAction`**, recorded against the new stay. |
 | `WorkerStatus.BLACKLISTED` | **Not built.** `WorkerStatus` is `ACTIVE \| INACTIVE \| DELETED`. |
 | `GenderRule.MIXED` / `GenderRule.PER_ROOM` | **Not built.** `GenderRule` is `ANY \| MALE_ONLY \| FEMALE_ONLY`, and it lives on the room only — properties have no gender rule. `ANY` is the closest equivalent of `MIXED`. |
 | `EntityStatus.MAINTENANCE` | **Not built.** There is no shared `EntityStatus`. `PropertyStatus` is `ACTIVE \| INACTIVE`; `RoomStatus` is `ACTIVE \| BLOCKED`. |
@@ -1299,8 +1377,8 @@ Everything below appeared in the original specification and **is not built**. Th
 | Was specified as | Status |
 |------------------|--------|
 | `WORKER_BLACKLISTED` (soft, `constraint.worker.blacklisted`) | **Not built.** No such constraint class, no such message code, and no blacklist concept on `Worker`. |
-| `OVER_PLANNED` (soft, `constraint.room.over_planned`) | **Not built.** No such constraint class and no such message code. Over-planning is caught as the hard `CAPACITY_EXCEEDED` / `constraint.room.capacity.exceeded` violation instead. |
-| `PROPERTY_BLOCKED` (`constraint.property.blocked`) | **Not built under that name.** The implemented equivalent is `PROPERTY_INACTIVE` / `constraint.property.inactive` (§6). |
+| `OVER_PLANNED` (soft, `constraint.room.over_planned`) | **Not built.** No such constraint class and no such message code. Placing more workers than a room has beds for is caught hard, per bed, at write time — `BED_OCCUPIED` when a specific bed is already taken, `BED_UNAVAILABLE` when the room has no free bed left to auto-assign (§7) — there is no separate soft "over-planned" warning. |
+| `PROPERTY_BLOCKED` (`constraint.property.blocked`) | **Not built under that name.** The implemented equivalent is `PROPERTY_INACTIVE` / `constraint.property.inactive` (§7). |
 | `constraint.gender.mismatch` message code | **Not built under that name.** The implemented code is `constraint.room.gender_mismatch`. |
 | `error.constraint.violations_found` message code | **Not built.** The implemented codes are `error.constraint.violated` (hard) and `error.constraint.soft_violations` (soft). |
 
@@ -1326,15 +1404,15 @@ If the frontend wants a controlled vocabulary for no-show, it must define and en
 | `PropertyResponse.roomSummary` (`totalRooms`, `totalCapacity`, `totalBlockedSpots`, `currentOccupancy`) | **Not built.** |
 | `RoomResponse.occupants[]`, `RoomResponse.currentOccupancy` | **Not built.** Use `GET /properties/{id}/occupancy`. |
 | `RoomResponse.roomNumber` | **Not built.** Rooms use `name` (a string). No API surface uses `roomNumber`. |
-| `StayResponse.worker` / `.property` / `.room` nested objects | **Not built.** `StayResponse` is flat (§5). |
+| `StayResponse.worker` / `.property` / `.room` nested objects | **Not built.** `StayResponse` is flat (§6). |
 | `StayResponse.createdBy` / `.confirmedBy` | **Not built.** `confirmed_by_user_id` is stored but never serialised. |
 | `WorkerSummary`, `StaySummary`, `PropertySummary`, `RoomSummary` nested payloads | `WorkerSummary` and `StaySummary` records exist with mapper methods but **no endpoint returns them**. `PropertySummary` and `RoomSummary` do not exist at all. |
-| Arrivals wrapper with `date`, `property`, `expected[]`, `summary{}` | **Not built.** The endpoint returns a bare array (§7). |
-| Occupancy wrapper with `property`, `date`, `rooms[]`, `summary{}` | **Not built.** Bare array (§9). |
-| Exceptions wrapper with `property`, `date`, `exceptions[]` | **Not built.** Bare array (§9). |
+| Arrivals wrapper with `date`, `property`, `expected[]`, `summary{}` | **Not built.** The endpoint returns a bare array (§8). |
+| Occupancy wrapper with `property`, `date`, `rooms[]`, `summary{}` | **Not built.** Bare array (§10). |
+| Exceptions wrapper with `property`, `date`, `exceptions[]` | **Not built.** Bare array (§10). |
 | `UNASSIGNED_WORKER` exception type (`exception.worker.no_bed_tonight`) | **Not built.** Only `OVER_CAPACITY` and `PENDING_ARRIVAL` exist. |
-| Inspection wrapper with `property`, `date`, `inspectedBy` | **Not built.** Bare array (§10). |
-| Persisted inspection report (`id`, `inspectedBy`, `totalRooms`, `okRooms`, `discrepancyRooms`) | **Not built.** `POST .../inspection` computes and returns discrepancies without storing anything (§10). |
-| `AuditEventResponse.performedBy` object, `.notes`, `.reasonTag` | **Not built.** Only `actorUserId` (a bare UUID) and a single `reason` string (§11). |
-| Bulk-assign / bulk-checkout `total` / `succeeded` / `failed` counters and uppercase `CREATED` / `FAILED` / `CHECKED_OUT` statuses | **Not built.** The real shapes use `created`/`errors` and `checkedOut`/`errors` with **lowercase** `created`, `checked_out`, `error` (§5, §8). |
+| Inspection wrapper with `property`, `date`, `inspectedBy` | **Not built.** Bare array (§11). |
+| Persisted inspection report (`id`, `inspectedBy`, `totalRooms`, `okRooms`, `discrepancyRooms`) | **Not built.** `POST .../inspection` computes and returns discrepancies without storing anything (§11). |
+| `AuditEventResponse.performedBy` object, `.notes`, `.reasonTag` | **Not built.** Only `actorUserId` (a bare UUID) and a single `reason` string (§12). |
+| Bulk-assign / bulk-checkout `total` / `succeeded` / `failed` counters and uppercase `CREATED` / `FAILED` / `CHECKED_OUT` statuses | **Not built.** The real shapes use `created`/`errors` and `checkedOut`/`errors` with **lowercase** `created`, `checked_out`, `error` (§6, §9). |
 | Worker import `totalRows`, and `errors` as an array | **Not built.** `errors` is an **integer count**; the array is `errorDetails` (§2). |

@@ -556,24 +556,24 @@ Room list/read endpoints now need a bed-count aggregate instead of reading two i
 
 #### Automated
 
-- [x] 5.1 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'`
-- [x] 5.2 Full build green: `./gradlew build`
+- [x] 5.1 Occupancy module tests pass: `./gradlew test --tests 'com.beduno.occupancy.*'` — 0712315
+- [x] 5.2 Full build green: `./gradlew build` — 0712315
 
 #### Manual
 
-- [ ] 5.3 Occupancy CSV export names a bed per occupant row
-- [ ] 5.4 Inspection roster distinguishes same-room workers by bed
+- [x] 5.3 Occupancy CSV export names a bed per occupant row — 0712315
+- [x] 5.4 Inspection roster distinguishes same-room workers by bed — 0712315
 
 ### Phase 6: Test suite reconciliation and documentation close-out
 
 #### Automated
 
-- [ ] 6.1 Full build green including Checkstyle: `./gradlew build`
-- [ ] 6.2 Full test suite passes: `./gradlew test`
-- [ ] 6.3 No remaining capacity/blockedSpots references outside V1-V9 migrations
-- [ ] 6.4 Cross-agency isolation test passes for bed-touching write paths
+- [x] 6.1 Full build green including Checkstyle: `./gradlew build`
+- [x] 6.2 Full test suite passes: `./gradlew test`
+- [x] 6.3 No remaining capacity/blockedSpots references outside V1-V9 migrations
+- [x] 6.4 Cross-agency isolation test passes for bed-touching write paths
 
 #### Manual
 
-- [ ] 6.5 US-01 wave walkthrough end-to-end, bed-level detail confirmed in export and audit log
-- [ ] 6.6 Updated docs/api-specification.md handed to the frontend session
+- [x] 6.5 US-01 wave walkthrough end-to-end, bed-level detail confirmed in export and audit log
+- [x] 6.6 Updated docs/api-specification.md handed to the frontend session
