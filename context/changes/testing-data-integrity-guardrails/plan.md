@@ -348,25 +348,25 @@ not remediated — see "What We're NOT Doing."
 
 #### Automated
 
-- [x] 1.1 `./gradlew test --tests "com.beduno.property.DeletionGuardIntegrationTest"` passes
-- [x] 1.2 `./gradlew build` passes (Checkstyle + full compile)
+- [x] 1.1 `./gradlew test --tests "com.beduno.property.DeletionGuardIntegrationTest"` passes — d1a93ba
+- [x] 1.2 `./gradlew build` passes (Checkstyle + full compile) — d1a93ba
 
 #### Manual
 
-- [x] 1.3 Confirm the new `has_beds` test fails when the guard is temporarily removed, then restore it
+- [x] 1.3 Confirm the new `has_beds` test fails when the guard is temporarily removed, then restore it — d1a93ba
 
 ### Phase 2: Migration-testing harness
 
 #### Automated
 
-- [ ] 2.1 `./gradlew test --tests "com.beduno.migration.*"` passes (Test A and Test B both green)
-- [ ] 2.2 `./gradlew build` passes (Checkstyle + full compile)
-- [ ] 2.3 Full suite passes: `./gradlew test`
+- [x] 2.1 `./gradlew test --tests "com.beduno.migration.*"` passes (Test A and Test B both green)
+- [x] 2.2 `./gradlew build` passes (Checkstyle + full compile)
+- [x] 2.3 Full suite passes: `./gradlew test`
 
 #### Manual
 
-- [ ] 2.4 Confirm Test B's violation assertion fails when its overlap predicate is temporarily neutered, then restore it
-- [ ] 2.5 Confirm full-suite wall-clock delta from the new container is acceptable
+- [x] 2.4 Confirm Test B's violation assertion fails when its overlap predicate is temporarily neutered, then restore it
+- [x] 2.5 Confirm full-suite wall-clock delta from the new container is acceptable
 
 ### Phase 3: Documentation close-out
 

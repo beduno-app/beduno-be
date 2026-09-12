@@ -6,7 +6,7 @@
 >
 > Refresh: re-run `/10x-test-plan --refresh` when stale (see §8).
 >
-> Last updated: 2026-09-11
+> Last updated: 2026-09-12
 
 ## 1. Strategy
 
@@ -89,9 +89,9 @@ orchestrator updates Status as artifacts appear on disk.
 
 | # | Phase name | Goal (one line) | Risks covered | Test types | Status | Change folder |
 |---|---|---|---|---|---|---|
-| 1 | Constraint engine hardening | Prove bed conflicts are rejected end-to-end and constraint combinations/boundaries compose correctly | #1, #2 | integration | change opened | `context/changes/testing-constraint-engine-hardening/` |
-| 2 | Authorization boundary closure | Prove property-scoping and cross-agency isolation hold across every write path, not just the 3 known-enforced endpoints | #3, #5 | integration | not started | — |
-| 3 | Data-integrity guardrails | Prove RESTRICT-FK delete guards and migration/backfill correctness generalize to the next entity/migration in sequence | #4, #6 | integration | not started | — |
+| 1 | Constraint engine hardening | Prove bed conflicts are rejected end-to-end and constraint combinations/boundaries compose correctly | #1, #2 | integration | complete | `context/changes/testing-constraint-engine-hardening/` |
+| 2 | Authorization boundary closure | Prove property-scoping and cross-agency isolation hold across every write path, not just the 3 known-enforced endpoints | #3, #5 | integration | complete | `context/changes/testing-authorization-boundary-closure/` |
+| 3 | Data-integrity guardrails | Prove RESTRICT-FK delete guards and migration/backfill correctness generalize to the next entity/migration in sequence | #4, #6 | integration | change opened | `context/changes/testing-data-integrity-guardrails/` |
 | 4 | Rate-limit abuse hardening | Prove the IP-derivation/rate-limit path cannot be trivially bypassed via forged headers off-CloudFront | #7 | unit/slice | not started | — |
 
 **Status vocabulary** (fixed — parser literals): `not started` →
@@ -183,7 +183,29 @@ the relevant rollout phase ships; before that, the sub-section reads
 
 ### 6.5 Adding a Flyway migration test
 
-- TBD — see §3 Phase 3.
+- **Location**: `src/test/java/com/beduno/migration/`. Plain JUnit 5, no
+  `@SpringBootTest` — boots no Spring context at all.
+- **Container**: own dedicated `@Testcontainers`/`@Container`
+  `PostgreSQLContainer`, independent of `IntegrationTestBase`'s shared
+  instance. That shared container is already fully migrated to the latest
+  version once, for the whole test JVM run, and cannot be rewound to an
+  intermediate schema version without breaking every other integration
+  test.
+- **Pattern**: seed → partial-migrate → seed more → continue-migrate →
+  assert. Drive Flyway directly via its Java API through
+  `MigrationTestSupport` (`migrateTo("<version>")` /
+  `migrateToLatest()`), so a test can stop mid-sequence, insert rows with
+  plain JDBC, then resume — Flyway's own `flyway_schema_history` table
+  tracks what's already applied, so a second `.migrate()` call only runs
+  what's pending. Reset the schema (`DROP SCHEMA public CASCADE; CREATE
+  SCHEMA public;`) in `@BeforeEach` so each test method starts from a
+  clean, unmigrated database.
+- **Mocking policy**: never mock the database — same hard project
+  convention as every other integration test (AGENTS.md).
+- **Reference test**: `src/test/java/com/beduno/migration/BedBackfillMigrationTest.java`
+  — proves the real V10→V14 sequence both for a safe case and for a
+  known, intentionally-unfixed gap (see §6.6 below).
+- **Run locally**: `./gradlew test --tests "com.beduno.migration.*"`.
 
 ### 6.6 Per-rollout-phase notes
 
