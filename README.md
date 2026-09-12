@@ -140,8 +140,10 @@ Required before the first launch — `deploy/launch.sh` refuses to run without a
 | `/beduno/prod/JWT_SECRET` | SecureString | HS256 signing key, at least 256 bits |
 | `/beduno/prod/APP_IMAGE` | String | full ECR image URI including tag (`publish.sh` maintains this) |
 
-Optional, and only until the first login — these create the first agency and administrator,
-because there is no user-management API and the migrations seed no rows:
+Optional, and only until the first login — these create the first agency and administrator.
+The Users API (`/api/v1/users`) manages accounts after that point, but it requires an
+authenticated AGENCY_ADMIN to call it, and the migrations seed no rows — this bootstrap is the
+only way to get the very first admin into an otherwise-empty database:
 
 | Parameter | Type | Value |
 |-----------|------|-------|

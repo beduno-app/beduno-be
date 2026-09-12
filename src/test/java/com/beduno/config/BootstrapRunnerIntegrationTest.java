@@ -3,6 +3,7 @@ package com.beduno.config;
 import com.beduno.agency.AgencyRepository;
 import com.beduno.user.Role;
 import com.beduno.user.UserRepository;
+import com.beduno.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -92,7 +93,7 @@ class BootstrapRunnerIntegrationTest {
             var admin = userRepository.findByEmail("admin@agency.pl").orElseThrow();
             assertThat(admin.getAgencyId()).isEqualTo(agency.getId());
             assertThat(admin.getRole()).isEqualTo(Role.AGENCY_ADMIN);
-            assertThat(admin.getStatus()).isEqualTo("ACTIVE");
+            assertThat(admin.getStatus()).isEqualTo(UserStatus.ACTIVE);
             assertThat(admin.getLanguage()).isEqualTo("PL");
             assertThat(admin.getAssignedPropertyIds()).isEmpty();
         }

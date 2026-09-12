@@ -6,9 +6,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Credentials for the first agency and the first AGENCY_ADMIN. There is no user-management API
- * (open-questions Q6), so without this a freshly deployed instance has an empty users table, no
- * way to obtain a token, and therefore no reachable endpoint at all.
+ * Credentials for the first agency and the first AGENCY_ADMIN. The Users API ({@code
+ * com.beduno.user.UserController}) requires an authenticated AGENCY_ADMIN to call it, so without
+ * this a freshly deployed instance has an empty users table, no way to obtain a token, and
+ * therefore no reachable endpoint at all.
  */
 @Configuration
 @ConfigurationProperties(prefix = "beduno.bootstrap")

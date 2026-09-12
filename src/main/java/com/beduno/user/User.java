@@ -43,8 +43,9 @@ public class User extends BaseEntity {
     @Column(name = "assigned_property_ids", columnDefinition = "uuid[]")
     private UUID[] assignedPropertyIds = {};
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status = "ACTIVE";
+    private UserStatus status = UserStatus.ACTIVE;
 
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
