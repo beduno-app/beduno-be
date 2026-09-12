@@ -1,7 +1,7 @@
 ---
 change_id: testing-data-integrity-guardrails
 title: Data-integrity guardrails — RESTRICT-FK delete guards and migration/backfill correctness
-status: implementing
+status: implemented
 created: 2026-09-12
 updated: 2026-09-12
 archived_at: null

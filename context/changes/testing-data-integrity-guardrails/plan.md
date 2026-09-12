@@ -372,8 +372,8 @@ not remediated — see "What We're NOT Doing."
 
 #### Automated
 
-- [x] 3.1 `./gradlew build` passes
+- [x] 3.1 `./gradlew build` passes — b7aaa31
 
 #### Manual
 
-- [x] 3.2 Read the updated test-plan.md §3/§6.5/§6.6 sections for accuracy
+- [x] 3.2 Read the updated test-plan.md §3/§6.5/§6.6 sections for accuracy — b7aaa31
