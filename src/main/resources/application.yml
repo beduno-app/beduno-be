@@ -45,6 +45,11 @@ beduno:
     admin-first-name: ${BOOTSTRAP_ADMIN_FIRST_NAME:Agency}
     admin-last-name: ${BOOTSTRAP_ADMIN_LAST_NAME:Admin}
     admin-language: ${BOOTSTRAP_ADMIN_LANGUAGE:PL}
+  # Populates a demo agency (users, workers, properties, rooms, beds, stays) on an empty database,
+  # then does nothing on every later start. Off by default -- see SeedRunner. Local dev turns this
+  # on by default; see application-dev.yml.
+  seed:
+    enabled: ${BEDUNO_SEED_ENABLED:false}
   scheduler:
     arrival-transition-cron: "0 0 6 * * *"
   jwt:

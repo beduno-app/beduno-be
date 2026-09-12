@@ -75,6 +75,16 @@ characters, **fails startup** — the alternative is an API that answers 401 to 
 explanation. Once a user exists the runner stops before validating, so leftover variables on a
 populated database do nothing.
 
+| Variable | Description |
+|----------|-------------|
+| `BEDUNO_SEED_ENABLED` | `true` to populate a demo agency (4 users, 2 properties, 6 rooms, 8 beds, 8 workers, 7 stays) at startup, once, on an empty database. Default `false`, except the `dev` profile, where it defaults `true` |
+
+Seeded users all share the password `Demo12345678!`: `admin@demo.beduno.dev` (`AGENCY_ADMIN`),
+`planner@demo.beduno.dev` (`AGENCY_PLANNER`), `propertyadmin@demo.beduno.dev` (`PROPERTY_ADMIN`),
+`frontdesk@demo.beduno.dev` (`FRONT_DESK`). Do not enable this against a real tenant's database —
+it is a local/demo convenience, not a migration, and it writes real rows the same way `BOOTSTRAP_*`
+does. See `SeedRunner` for exactly what it creates.
+
 ---
 
 ## Build & Test

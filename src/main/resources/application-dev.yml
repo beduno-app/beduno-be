@@ -17,3 +17,7 @@ logging:
 beduno:
   jwt:
     secret: ${JWT_SECRET:beduno-dev-secret-key-that-is-at-least-256-bits-long-for-hs256}
+  # Local dev only: populate a demo agency on first run against the empty local Postgres so there
+  # is something to click through. Set BEDUNO_SEED_ENABLED=false to opt out.
+  seed:
+    enabled: ${BEDUNO_SEED_ENABLED:true}
