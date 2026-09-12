@@ -203,6 +203,33 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
             assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
         }
+
+        // Documents a known gap (test-plan.md Risk #3, research.md Open Question 1): StayController
+        // performs no property-scope check today, so a PROPERTY_ADMIN whose assignedPropertyIds does
+        // NOT include this stay's property can still check it in. This test intentionally asserts
+        // today's actual (insecure) behavior as a trip-wire -- it will start failing once roadmap
+        // slice S-08 ("enforce-property-scoping") adds the missing check, at which point whoever
+        // implements S-08 should update or remove it. See the Occupancy sibling test in
+        // OccupancyEndpoints for the same pattern.
+        @Test
+        void shouldAllowCheckIn_whenPropertyAdminNotAssignedToStaysProperty() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+
+            var stay = createPlannedStay(worker.id(), property.id(), room.id(), LocalDate.now(), LocalDate.now().plusDays(7));
+            forceExpectedToday(stay.id());
+
+            var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{UUID.randomUUID()});
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(null, null, null), headers),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
     }
 
     @Nested
@@ -453,6 +480,29 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
                     .findFirst();
             assertThat(exception).isPresent();
             assertThat(exception.get().exceptionType()).isEqualTo("OVER_CAPACITY");
+        }
+
+        // Documents a known gap (test-plan.md Risk #3, research.md Open Question 1): OccupancyController
+        // performs no property-scope check today, so a PROPERTY_ADMIN whose assignedPropertyIds does
+        // NOT include this property can still read its occupancy. Sibling case to the check-in
+        // trip-wire in CheckInWorkflow -- same rationale, same roadmap slice (S-08) will eventually
+        // make this test fail.
+        @Test
+        void shouldAllowOccupancyRead_whenPropertyAdminNotAssignedToProperty() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            checkedInStay(worker.id(), property.id(), room.id());
+
+            var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{UUID.randomUUID()});
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/occupancy?date=" + LocalDate.now(),
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    new ParameterizedTypeReference<List<RoomOccupancyResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         }
     }
 
