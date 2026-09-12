@@ -65,6 +65,26 @@ class BedIntegrationTest extends IntegrationTestBase {
                     new HttpEntity<>(new CreateBedRequest("A1"), headers), String.class);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         }
+
+        @Test
+        void shouldCreateBed_whenPropertyAdminWithAccess() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{room.propertyId()});
+            var response = restTemplate.exchange(
+                    bedsUrl(room), HttpMethod.POST, new HttpEntity<>(new CreateBedRequest("PA-1"), headers), BedResponse.class
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        }
+
+        @Test
+        void shouldRejectCreate_whenPropertyAdminWithoutAccess() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var headers = authHeaders(Role.PROPERTY_ADMIN, DEFAULT_AGENCY_ID, new UUID[]{UUID.randomUUID()});
+            var response = restTemplate.exchange(
+                    bedsUrl(room), HttpMethod.POST, new HttpEntity<>(new CreateBedRequest("PA-2"), headers), String.class
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
     }
 
     @Nested

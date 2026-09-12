@@ -355,23 +355,23 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 2.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
-- [x] 2.2 New BedAssignmentIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
-- [x] 2.3 Full suite still green: `./gradlew test`
-- [x] 2.4 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 2.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"` — 3ecb5c5
+- [x] 2.2 New BedAssignmentIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"` — 3ecb5c5
+- [x] 2.3 Full suite still green: `./gradlew test` — 3ecb5c5
+- [x] 2.4 Full build (incl. Checkstyle) passes: `./gradlew build` — 3ecb5c5
 
 #### Manual
 
-- [x] 2.5 Confirm each of the 5 new tests would fail if its agency-filtering call were removed
+- [x] 2.5 Confirm each of the 5 new tests would fail if its agency-filtering call were removed — 3ecb5c5
 
 ### Phase 3: BedIntegrationTest property-scoping parity
 
 #### Automated
 
-- [ ] 3.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
-- [ ] 3.2 Full suite still green: `./gradlew test`
-- [ ] 3.3 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 3.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
+- [x] 3.2 Full suite still green: `./gradlew test`
+- [x] 3.3 Full build (incl. Checkstyle) passes: `./gradlew build`
 
 #### Manual
 
-- [ ] 3.4 Confirm the new bed tests faithfully mirror RoomIntegrationTest.Create's pattern
+- [x] 3.4 Confirm the new bed tests faithfully mirror RoomIntegrationTest.Create's pattern
