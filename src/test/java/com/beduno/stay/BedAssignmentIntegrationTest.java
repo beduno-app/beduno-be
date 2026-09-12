@@ -188,6 +188,57 @@ class BedAssignmentIntegrationTest extends IntegrationTestBase {
     }
 
     @Nested
+    class BoundaryConditions {
+
+        @Test
+        void shouldAllowNewStay_whenCheckoutDateEqualsCheckinDate() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var dateFrom = LocalDate.now().plusDays(1);
+            var dateTo = dateFrom.plusDays(7);
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(), dateFrom, dateTo);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    dateTo, dateTo.plusDays(7), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        }
+
+        @Test
+        void shouldRejectNewStay_whenDatesTrulyOverlap() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var dateFrom = LocalDate.now().plusDays(1);
+            var dateTo = dateFrom.plusDays(7);
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(), dateFrom, dateTo);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    dateTo.minusDays(1), dateTo.plusDays(6), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+    }
+
+    @Nested
     class TenantIsolation {
 
         @Test

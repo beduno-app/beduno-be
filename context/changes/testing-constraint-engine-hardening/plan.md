@@ -442,26 +442,26 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 1.1 New StayIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.StayIntegrationTest"`
-- [x] 1.2 New OperationalWorkflowIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.OperationalWorkflowIntegrationTest"`
-- [x] 1.3 Full suite still green: `./gradlew test`
-- [x] 1.4 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 1.1 New StayIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.StayIntegrationTest"` — ebe5e5c
+- [x] 1.2 New OperationalWorkflowIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.OperationalWorkflowIntegrationTest"` — ebe5e5c
+- [x] 1.3 Full suite still green: `./gradlew test` — ebe5e5c
+- [x] 1.4 Full build (incl. Checkstyle) passes: `./gradlew build` — ebe5e5c
 
 #### Manual
 
-- [x] 1.5 Review each of the 6 new tests for a research-derived (not observed) expected status/error code
+- [x] 1.5 Review each of the 6 new tests for a research-derived (not observed) expected status/error code — ebe5e5c
 
 ### Phase 2: Boundary-case coverage (date adjacency)
 
 #### Automated
 
-- [ ] 2.1 New BedAssignmentIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
-- [ ] 2.2 Full suite still green: `./gradlew test`
-- [ ] 2.3 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 2.1 New BedAssignmentIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
+- [x] 2.2 Full suite still green: `./gradlew test`
+- [x] 2.3 Full build (incl. Checkstyle) passes: `./gradlew build`
 
 #### Manual
 
-- [ ] 2.4 Confirm the boundary test would fail under a flipped comparison operator
+- [x] 2.4 Confirm the boundary test would fail under a flipped comparison operator
 
 ### Phase 3: Combo test, bulk-assign documentation, and cookbook close-out
 
