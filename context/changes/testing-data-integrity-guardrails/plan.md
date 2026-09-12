@@ -359,21 +359,21 @@ not remediated — see "What We're NOT Doing."
 
 #### Automated
 
-- [x] 2.1 `./gradlew test --tests "com.beduno.migration.*"` passes (Test A and Test B both green)
-- [x] 2.2 `./gradlew build` passes (Checkstyle + full compile)
-- [x] 2.3 Full suite passes: `./gradlew test`
+- [x] 2.1 `./gradlew test --tests "com.beduno.migration.*"` passes (Test A and Test B both green) — 33db786
+- [x] 2.2 `./gradlew build` passes (Checkstyle + full compile) — 33db786
+- [x] 2.3 Full suite passes: `./gradlew test` — 33db786
 
 #### Manual
 
-- [x] 2.4 Confirm Test B's violation assertion fails when its overlap predicate is temporarily neutered, then restore it
-- [x] 2.5 Confirm full-suite wall-clock delta from the new container is acceptable
+- [x] 2.4 Confirm Test B's violation assertion fails when its overlap predicate is temporarily neutered, then restore it — 33db786
+- [x] 2.5 Confirm full-suite wall-clock delta from the new container is acceptable — 33db786
 
 ### Phase 3: Documentation close-out
 
 #### Automated
 
-- [ ] 3.1 `./gradlew build` passes
+- [x] 3.1 `./gradlew build` passes
 
 #### Manual
 
-- [ ] 3.2 Read the updated test-plan.md §3/§6.5/§6.6 sections for accuracy
+- [x] 3.2 Read the updated test-plan.md §3/§6.5/§6.6 sections for accuracy

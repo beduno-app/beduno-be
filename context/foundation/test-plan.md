@@ -91,7 +91,7 @@ orchestrator updates Status as artifacts appear on disk.
 |---|---|---|---|---|---|---|
 | 1 | Constraint engine hardening | Prove bed conflicts are rejected end-to-end and constraint combinations/boundaries compose correctly | #1, #2 | integration | complete | `context/changes/testing-constraint-engine-hardening/` |
 | 2 | Authorization boundary closure | Prove property-scoping and cross-agency isolation hold across every write path, not just the 3 known-enforced endpoints | #3, #5 | integration | complete | `context/changes/testing-authorization-boundary-closure/` |
-| 3 | Data-integrity guardrails | Prove RESTRICT-FK delete guards and migration/backfill correctness generalize to the next entity/migration in sequence | #4, #6 | integration | change opened | `context/changes/testing-data-integrity-guardrails/` |
+| 3 | Data-integrity guardrails | Prove RESTRICT-FK delete guards and migration/backfill correctness generalize to the next entity/migration in sequence | #4, #6 | integration | complete | `context/changes/testing-data-integrity-guardrails/` |
 | 4 | Rate-limit abuse hardening | Prove the IP-derivation/rate-limit path cannot be trivially bypassed via forged headers off-CloudFront | #7 | unit/slice | not started | — |
 
 **Status vocabulary** (fixed — parser literals): `not started` →
@@ -221,6 +221,25 @@ lands.)
   bed-assigning write paths — see
   `context/changes/testing-constraint-engine-hardening/research.md` Open
   Question 1 if that contract is ever revisited.
+
+- **Phase 3 (data-integrity guardrails)** closed the one previously-untested
+  delete-guard branch (`error.room.has_beds`) and documented
+  `error.property.has_stays` as unreachable dead code under current
+  business rules (a stay always implies a room, and `has_rooms` is
+  checked first). It also built the first migration-testing harness
+  (`MigrationTestSupport` + `BedBackfillMigrationTest`, §6.5) capable of
+  seeding populated data mid-sequence rather than only ever migrating an
+  empty schema — and, while proving that harness against the real
+  V10→V14 sequence, found a real, previously-unknown gap:
+  `V12__backfill_beds.sql`'s creation-order rank/modulo bed assignment
+  ignores date-range overlap entirely, so a room whose historical stays
+  interleaved across ranks can end up with two overlapping stays sharing
+  one bed — violating `BedOccupancyConstraint`. This is proven by a
+  passing test (`BedBackfillMigrationTest.shouldDocumentKnownBedOccupancyViolation_whenHistoricalStaysInterleaveAcrossRanks`),
+  not fixed: no existing migration is modified, and no forward-fix
+  migration was written, per this rollout's test-only scope. See
+  `context/changes/testing-data-integrity-guardrails/plan.md`'s Current
+  State Analysis for the full mechanism and rationale.
 
 ## 7. What We Deliberately Don't Test
 
