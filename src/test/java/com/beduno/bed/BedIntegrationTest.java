@@ -185,6 +185,44 @@ class BedIntegrationTest extends IntegrationTestBase {
                     new HttpEntity<>(headers), String.class);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
+
+        @Test
+        void shouldNotCreateBedInOtherAgencyRoom() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
+            var response = restTemplate.exchange(bedsUrl(room), HttpMethod.POST,
+                    new HttpEntity<>(new CreateBedRequest("X1"), headers), String.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @Test
+        void shouldNotBulkGenerateBedsInOtherAgencyRoom() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
+            var response = restTemplate.exchange(bedsUrl(room) + "/bulk-generate", HttpMethod.POST,
+                    new HttpEntity<>(new BulkGenerateBedsRequest(2), headers), String.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @Test
+        void shouldNotUpdateBedInOtherAgencyRoom() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var bed = createBed(room, "A1");
+            var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
+            var response = restTemplate.exchange(bedsUrl(room) + "/" + bed.id(), HttpMethod.PUT,
+                    new HttpEntity<>(new UpdateBedRequest("A1", BedStatus.BLOCKED), headers), String.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @Test
+        void shouldNotDeleteBedInOtherAgencyRoom() {
+            var room = createRoom(DEFAULT_AGENCY_ID);
+            var bed = createBed(room, "A1");
+            var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
+            var response = restTemplate.exchange(bedsUrl(room) + "/" + bed.id(), HttpMethod.DELETE,
+                    new HttpEntity<>(headers), String.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
     }
 
     private String bedsUrl(RoomResponse room) {

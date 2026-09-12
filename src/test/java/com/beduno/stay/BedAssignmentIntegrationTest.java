@@ -262,6 +262,23 @@ class BedAssignmentIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(response.getBody().error()).isEqualTo("VALIDATION_ERROR");
         }
+
+        @Test
+        void shouldRejectAutoAssign_whenRoomBelongsToOtherAgency() {
+            var worker = createWorker(OTHER_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), null,
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID)),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
     }
 
     private WorkerResponse createWorker(UUID agencyId) {

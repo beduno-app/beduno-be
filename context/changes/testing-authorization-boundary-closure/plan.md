@@ -343,26 +343,26 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 1.1 New OperationalWorkflowIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.OperationalWorkflowIntegrationTest"`
-- [x] 1.2 Full suite still green: `./gradlew test`
-- [x] 1.3 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 1.1 New OperationalWorkflowIntegrationTest tests pass: `./gradlew test --tests "com.beduno.stay.OperationalWorkflowIntegrationTest"` — d077a08
+- [x] 1.2 Full suite still green: `./gradlew test` — d077a08
+- [x] 1.3 Full build (incl. Checkstyle) passes: `./gradlew build` — d077a08
 
 #### Manual
 
-- [x] 1.4 Read both trip-wire tests' inline comments for clarity as documented, intentional gaps
+- [x] 1.4 Read both trip-wire tests' inline comments for clarity as documented, intentional gaps — d077a08
 
 ### Phase 2: Cross-agency bed-path tests
 
 #### Automated
 
-- [ ] 2.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
-- [ ] 2.2 New BedAssignmentIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
-- [ ] 2.3 Full suite still green: `./gradlew test`
-- [ ] 2.4 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 2.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
+- [x] 2.2 New BedAssignmentIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BedAssignmentIntegrationTest"`
+- [x] 2.3 Full suite still green: `./gradlew test`
+- [x] 2.4 Full build (incl. Checkstyle) passes: `./gradlew build`
 
 #### Manual
 
-- [ ] 2.5 Confirm each of the 5 new tests would fail if its agency-filtering call were removed
+- [x] 2.5 Confirm each of the 5 new tests would fail if its agency-filtering call were removed
 
 ### Phase 3: BedIntegrationTest property-scoping parity
 
