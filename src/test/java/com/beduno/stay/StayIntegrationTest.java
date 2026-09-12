@@ -251,6 +251,58 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().dateFrom()).isEqualTo(newDateFrom);
         }
+
+        @Test
+        void shouldRejectUpdate_whenTargetBedOccupied() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2, 0, GenderRule.MIXED);
+            var dateFrom = LocalDate.now().plusDays(110);
+            var dateTo = dateFrom.plusDays(7);
+
+            var stay = createStay(worker1.id(), property.id(), room.id(), dateFrom, dateTo, null);
+            var beds = listBeds(property.id(), room.id());
+            var otherBed = beds.stream().filter(b -> !b.id().equals(stay.bedId())).findFirst().orElseThrow();
+
+            var occupyRequest = new CreateStayRequest(worker2.id(), property.id(), room.id(), otherBed.id(),
+                    dateFrom, dateTo, null, null);
+            restTemplate.exchange("/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(occupyRequest, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class);
+
+            var updateRequest = new UpdateStayRequest(room.id(), otherBed.id(), dateFrom, dateTo, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(updateRequest, authHeaders(Role.AGENCY_ADMIN)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectUpdate_whenTargetBedBlocked() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2, 1, GenderRule.MIXED);
+            var dateFrom = LocalDate.now().plusDays(120);
+            var dateTo = dateFrom.plusDays(7);
+
+            var stay = createStay(worker.id(), property.id(), room.id(), dateFrom, dateTo, null);
+            var beds = listBeds(property.id(), room.id());
+            var blockedBed = beds.stream().filter(b -> b.status() == BedStatus.BLOCKED).findFirst().orElseThrow();
+
+            var updateRequest = new UpdateStayRequest(room.id(), blockedBed.id(), dateFrom, dateTo, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(updateRequest, authHeaders(Role.AGENCY_ADMIN)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
     }
 
     @Nested
@@ -367,6 +419,14 @@ class StayIntegrationTest extends IntegrationTestBase {
             }
         }
         return room;
+    }
+
+    private List<BedResponse> listBeds(UUID propertyId, UUID roomId) {
+        return restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/rooms/" + roomId + "/beds", HttpMethod.GET,
+                new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                new ParameterizedTypeReference<List<BedResponse>>() {}
+        ).getBody();
     }
 
     private StayResponse createStay(UUID workerId, UUID propertyId, UUID roomId,

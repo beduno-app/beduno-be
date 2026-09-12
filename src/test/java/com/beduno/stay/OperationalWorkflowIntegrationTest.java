@@ -5,6 +5,7 @@ import com.beduno.bed.BedStatus;
 import com.beduno.bed.dto.BedResponse;
 import com.beduno.bed.dto.BulkGenerateBedsRequest;
 import com.beduno.bed.dto.UpdateBedRequest;
+import com.beduno.common.exception.ErrorResponse;
 import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
 import com.beduno.occupancy.dto.InspectionRoomEntry;
@@ -150,6 +151,58 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         }
+
+        @Test
+        void shouldRejectCheckIn_whenTargetBedOccupied() {
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+
+            var stay = createPlannedStay(worker1.id(), property.id(), room.id(), LocalDate.now(), LocalDate.now().plusDays(7));
+            forceExpectedToday(stay.id());
+
+            var beds = listBeds(property.id(), room.id());
+            var otherBed = beds.stream().filter(b -> !b.id().equals(stay.bedId())).findFirst().orElseThrow();
+
+            var occupyRequest = new CreateStayRequest(worker2.id(), property.id(), room.id(), otherBed.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            restTemplate.exchange("/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(occupyRequest, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class);
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(null, otherBed.id(), null), authHeaders(Role.FRONT_DESK)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectCheckIn_whenTargetBedBlocked() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 1);
+
+            var stay = createPlannedStay(worker.id(), property.id(), room.id(), LocalDate.now(), LocalDate.now().plusDays(7));
+            forceExpectedToday(stay.id());
+
+            var beds = listBeds(property.id(), room.id());
+            var blockedBed = beds.stream().filter(b -> b.status() == BedStatus.BLOCKED).findFirst().orElseThrow();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(null, blockedBed.id(), null), authHeaders(Role.FRONT_DESK)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
     }
 
     @Nested
@@ -259,6 +312,55 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().roomId()).isEqualTo(room.id());
             assertThat(response.getBody().bedId()).isEqualTo(otherBed.id());
+        }
+
+        @Test
+        void shouldRejectMove_whenTargetBedOccupied() {
+            var worker = createWorker();
+            var otherWorker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var targetRoom = createRoom(property.id(), 2, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var targetBeds = listBeds(property.id(), targetRoom.id());
+            var occupiedBed = targetBeds.get(0);
+            var occupyRequest = new CreateStayRequest(otherWorker.id(), property.id(), targetRoom.id(), occupiedBed.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            restTemplate.exchange("/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(occupyRequest, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class);
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), occupiedBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectMove_whenTargetBedBlocked() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var targetRoom = createRoom(property.id(), 1, 1);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var targetBeds = listBeds(property.id(), targetRoom.id());
+            var blockedBed = targetBeds.get(0);
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), blockedBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
         }
     }
 
