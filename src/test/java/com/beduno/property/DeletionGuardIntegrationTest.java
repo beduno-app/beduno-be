@@ -37,6 +37,12 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
         ensureAgencyExists(DEFAULT_AGENCY_ID);
     }
 
+    /**
+     * error.property.has_stays (checked after has_rooms in PropertyService.delete) has no test
+     * here: a stay always requires a room, so any property with an active stay still has a room
+     * and has_rooms fires first. The branch is unreachable through the current API -- see
+     * context/changes/testing-data-integrity-guardrails/research.md.
+     */
     @Nested
     class PropertyDeletion {
 
@@ -99,6 +105,18 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         }
+
+        @Test
+        void shouldReturnConflict_whenRoomStillHasBeds() {
+            var property = createProperty();
+            var room = createRoom(property.id());
+            bulkGenerateBeds(property.id(), room.id(), 1);
+
+            var response = deleteRoom(property.id(), room.id());
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).contains("error.room.has_beds");
+        }
     }
 
     private org.springframework.http.ResponseEntity<String> deleteProperty(UUID propertyId) {
@@ -132,12 +150,16 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
                 RoomResponse.class).getBody();
     }
 
-    private StayResponse createStay(UUID propertyId, UUID roomId) {
+    private void bulkGenerateBeds(UUID propertyId, UUID roomId, int count) {
         restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/rooms/" + roomId + "/beds/bulk-generate",
                 HttpMethod.POST,
-                new HttpEntity<>(new BulkGenerateBedsRequest(1), authHeaders(Role.AGENCY_ADMIN)),
+                new HttpEntity<>(new BulkGenerateBedsRequest(count), authHeaders(Role.AGENCY_ADMIN)),
                 String.class);
+    }
+
+    private StayResponse createStay(UUID propertyId, UUID roomId) {
+        bulkGenerateBeds(propertyId, roomId, 1);
         var worker = createWorker();
         var request = new CreateStayRequest(
                 worker.id(), propertyId, roomId, null,
