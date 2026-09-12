@@ -467,12 +467,12 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 3.1 New ConstraintEngineTest test passes: `./gradlew test --tests "com.beduno.stay.constraint.ConstraintEngineTest"`
-- [x] 3.2 New BulkOperationsIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BulkOperationsIntegrationTest"`
-- [x] 3.3 Full suite still green: `./gradlew test`
-- [x] 3.4 Full build (incl. Checkstyle) passes: `./gradlew build`
-- [x] 3.5 test-plan.md §6.1 and §6.6 updated
+- [x] 3.1 New ConstraintEngineTest test passes: `./gradlew test --tests "com.beduno.stay.constraint.ConstraintEngineTest"` — 6953bf9
+- [x] 3.2 New BulkOperationsIntegrationTest test passes: `./gradlew test --tests "com.beduno.stay.BulkOperationsIntegrationTest"` — 6953bf9
+- [x] 3.3 Full suite still green: `./gradlew test` — 6953bf9
+- [x] 3.4 Full build (incl. Checkstyle) passes: `./gradlew build` — 6953bf9
+- [x] 3.5 test-plan.md §6.1 and §6.6 updated — 6953bf9
 
 #### Manual
 
-- [x] 3.6 Confirm the §6.6 note reads as genuinely useful guidance, not a restatement of the phase title
+- [x] 3.6 Confirm the §6.6 note reads as genuinely useful guidance, not a restatement of the phase title — 6953bf9

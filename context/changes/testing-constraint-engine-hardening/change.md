@@ -1,7 +1,7 @@
 ---
 change_id: testing-constraint-engine-hardening
 title: Constraint engine hardening — bed-conflict and boundary-case coverage
-status: implementing
+status: implemented
 created: 2026-09-11
 updated: 2026-09-12
 archived_at: null
