@@ -368,10 +368,10 @@ Not applicable — no schema or data changes.
 
 #### Automated
 
-- [x] 3.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"`
-- [x] 3.2 Full suite still green: `./gradlew test`
-- [x] 3.3 Full build (incl. Checkstyle) passes: `./gradlew build`
+- [x] 3.1 New BedIntegrationTest tests pass: `./gradlew test --tests "com.beduno.bed.BedIntegrationTest"` — af3cab5
+- [x] 3.2 Full suite still green: `./gradlew test` — af3cab5
+- [x] 3.3 Full build (incl. Checkstyle) passes: `./gradlew build` — af3cab5
 
 #### Manual
 
-- [x] 3.4 Confirm the new bed tests faithfully mirror RoomIntegrationTest.Create's pattern
+- [x] 3.4 Confirm the new bed tests faithfully mirror RoomIntegrationTest.Create's pattern — af3cab5
