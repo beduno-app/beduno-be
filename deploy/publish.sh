@@ -21,6 +21,24 @@ if [ -n "$(git -C "$root" status --porcelain)" ] && [ "${ALLOW_DIRTY:-0}" != 1 ]
   exit 1
 fi
 
+# The image is built with `bootJar -x test`, and CI only runs on pushes to main and on PRs -- so a
+# commit that exists only on a local branch has been tested by nothing at all. Publishing it still
+# produces a sha-tagged image that looks deliberate and traceable, which is the trap. Require HEAD
+# to be on origin/main unless the operator says otherwise in as many words.
+if [ "${ALLOW_UNTESTED:-0}" != 1 ]; then
+  if ! git -C "$root" fetch --quiet origin main 2>/dev/null; then
+    echo "ERROR: could not fetch origin/main to check whether this commit has been tested." >&2
+    echo "       Re-run with ALLOW_UNTESTED=1 to publish anyway." >&2
+    exit 1
+  fi
+  if [ "$(git -C "$root" rev-parse HEAD)" != "$(git -C "$root" rev-parse origin/main)" ]; then
+    echo "ERROR: HEAD is not origin/main, so CI has not run against this commit." >&2
+    echo "       The image is built with -x test; nothing else would test it either." >&2
+    echo "       Push and let CI go green, or re-run with ALLOW_UNTESTED=1." >&2
+    exit 1
+  fi
+fi
+
 TAG="${TAG:-$(git -C "$root" rev-parse --short HEAD)}"
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
@@ -64,6 +82,30 @@ if [ -z "$INSTANCE_ID" ]; then
   echo "No running instance. The parameter is updated, so the next start picks this image up:"
   echo "  ${here}/instance.sh start"
   exit 0
+fi
+
+# publish.sh updates the image only. If the deploy files themselves changed recently, the box is
+# still running the versions cloud-init wrote on its first boot, and nothing else would say so.
+if [ -n "$(git -C "$root" log --oneline -20 --name-only --pretty=format: -- \
+    deploy/docker-compose.prod.yml deploy/Caddyfile deploy/boot.sh | sort -u)" ]; then
+  echo "NOTE: deploy/docker-compose.prod.yml, deploy/Caddyfile or deploy/boot.sh changed in the"
+  echo "      last 20 commits. publish.sh does not update them on the box -- run ${here}/sync.sh"
+  echo "      if those changes have not been pushed to the instance yet."
+fi
+
+# Snapshot before the roll, not after. Restarting the unit lets Flyway apply pending migrations to
+# the only copy of the database, and rollback_parameter below reverts the *image* only -- a schema
+# change or a data backfill is permanent. Without this the newest restore point was whenever the
+# instance was last stopped, possibly days earlier. The snapshot is incremental and returns in
+# seconds; it completes in the background, which is enough, because what matters is that the
+# point-in-time marker exists before the migration runs.
+echo "snapshotting the data volume before rolling"
+if ! "$here/backup.sh" snapshot; then
+  echo "ERROR: could not take a pre-deploy snapshot; refusing to roll." >&2
+  echo "       Migrations are applied to the only copy of the database and are not reversible" >&2
+  echo "       by pointing APP_IMAGE back at the previous tag." >&2
+  rollback_parameter
+  exit 1
 fi
 
 # Restarting the unit re-runs boot.sh, which re-reads the parameters, refreshes the ECR token and

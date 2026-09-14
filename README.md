@@ -185,7 +185,7 @@ deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
 
 Only takes effect once `docker-compose.prod.yml` and `boot.sh` on the box forward the variable —
 if the instance was launched before this variable existed, push the updated deploy files onto it
-first (see `deploy/render-user-data.py` for what cloud-init would have written at launch).
+first with `deploy/sync.sh`.
 
 ### First launch
 
@@ -197,7 +197,12 @@ aws ssm put-parameter --name /beduno/prod/DUCKDNS_TOKEN  --type SecureString --v
 deploy/publish.sh          # build arm64, push to ECR, point APP_IMAGE at it
 deploy/launch.sh           # create the instance (refuses if one already exists)
 deploy/instance.sh status  # state, address, health
+deploy/backup.sh enable-daily   # daily snapshots; until this runs there are none
 ```
+
+`enable-daily` is not optional in practice. Without it the only snapshots a deployment ever gets
+are the one `instance.sh stop` takes and the one `publish.sh` takes before each roll — so an
+instance that is never stopped and never rolled has no restore point at all.
 
 `launch.sh` uses the existing security group and subnet by default; override with `SG_ID`,
 `SUBNET_ID`, `INSTANCE_TYPE` or `VOLUME_GB`. Cloud-init then installs Docker, writes the deploy
@@ -220,13 +225,20 @@ deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
 ### Day to day
 
 ```bash
-deploy/publish.sh            # deploy the current commit end to end
+deploy/publish.sh            # snapshot, then deploy the current commit end to end
+deploy/sync.sh               # push docker-compose.prod.yml / Caddyfile / boot.sh to the box
 deploy/instance.sh start     # start, and wait for the API to answer
 deploy/instance.sh stop      # snapshot the volume, then stop (this is the cost control)
 deploy/instance.sh logs app 200
 deploy/instance.sh shell
 deploy/backup.sh snapshot | list | prune | enable-daily
 ```
+
+`publish.sh` updates the **image** only. The three deploy files reach `/opt/beduno` through
+cloud-init on the instance's first boot and never again, so a change to any of them needs
+`deploy/sync.sh`; `publish.sh` prints a reminder when it sees one in recent history. It also
+refuses to publish a commit that is not `origin/main`, because the image is built with `-x test`
+and CI runs on nothing else — override with `ALLOW_UNTESTED=1` if you mean it.
 
 A stop invalidates two things and `boot.sh` refreshes both on the way back up: the public IPv4
 address (there is no Elastic IP — an idle one costs more than the disk) and the ECR authorization
@@ -250,11 +262,21 @@ bother it, and Flyway tolerates history rows for migrations the older jar does n
 (`ignoreMigrationPatterns` defaults to `*:future`). A rollback across purely additive migrations
 starts cleanly.
 
+**The rollback floor is `edcbb8d`** (named-beds p4). Earlier images do not start: V9 renamed
+`rooms.name` to `room_number` and V13 dropped `capacity` and `blocked_spots`, each in the same
+release as the code change, so `ddl-auto: validate` fails against any image that still maps them.
+Pointing `APP_IMAGE` below that floor gives a unit that crash-loops on every boot until the
+parameter is pointed forward again.
+
 It fails loudly — refusing to start rather than corrupting anything — when the newer schema
 **dropped or renamed** something the older code still maps. That is the case worth avoiding, and
 it is why migrations should stay additive: add columns nullable, and never drop or rename one in
-the same release that stops using it. A migration that is not additive needs a forward fix, not a
-rollback.
+the same release that stops using it — drop it in the release *after* the code stops mapping it.
+A migration that is not additive needs a forward fix, not a rollback. Tightening an existing
+column (`SET NOT NULL`, a new CHECK, an exclusion constraint) needs the same care in the other
+direction: precede it with an idempotent backfill, or with a pre-flight that fails with an
+actionable message, so it cannot half-apply against populated data. V14 has neither; V15 has the
+pre-flight.
 
 ---
 
