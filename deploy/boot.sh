@@ -39,6 +39,10 @@ BOOTSTRAP_AGENCY_NAME="$(param_optional /beduno/prod/BOOTSTRAP_AGENCY_NAME)"
 BOOTSTRAP_ADMIN_EMAIL="$(param_optional /beduno/prod/BOOTSTRAP_ADMIN_EMAIL)"
 BOOTSTRAP_ADMIN_PASSWORD="$(param_optional /beduno/prod/BOOTSTRAP_ADMIN_PASSWORD)"
 
+# Demo agency, separate from any real tenant. Safe to leave enabled: SeedRunner's idempotency
+# check is scoped to its own demo admin account, not to the database being empty.
+BEDUNO_SEED_ENABLED="$(param_optional /beduno/prod/BEDUNO_SEED_ENABLED)"
+
 # Point the hostname at whatever address this boot was given. An empty ip= makes DuckDNS use the
 # requesting address, so this works without the instance having to discover its own public IP.
 log "updating DuckDNS record for ${DUCKDNS_DOMAIN}.duckdns.org"
@@ -94,6 +98,7 @@ BOOTSTRAP_ENABLED=${BOOTSTRAP_ENABLED:-false}
 BOOTSTRAP_AGENCY_NAME=$(esc "${BOOTSTRAP_AGENCY_NAME}")
 BOOTSTRAP_ADMIN_EMAIL=$(esc "${BOOTSTRAP_ADMIN_EMAIL}")
 BOOTSTRAP_ADMIN_PASSWORD=$(esc "${BOOTSTRAP_ADMIN_PASSWORD}")
+BEDUNO_SEED_ENABLED=${BEDUNO_SEED_ENABLED:-false}
 EOF
 
 log "authenticating to ECR"

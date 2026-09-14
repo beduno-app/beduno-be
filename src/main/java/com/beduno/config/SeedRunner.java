@@ -39,25 +39,30 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Populates a demo agency with one row in every table, so a fresh local database is something a
- * person can click through instead of an empty shell that only proves auth works. Gated behind
- * {@link SeedProperties} the same way {@link BootstrapRunner} is gated, and for the same reason:
- * this must never run against a real tenant's data by accident.
+ * Populates its own demo agency with one row in every table, so a database is something a person
+ * can click through instead of an empty shell that only proves auth works. Gated behind
+ * {@link SeedProperties} the same way {@link BootstrapRunner} is gated.
+ *
+ * <p>Idempotency is scoped to the demo agency itself, not to the database as a whole: the guard
+ * checks for {@link #DEMO_ADMIN_EMAIL} rather than {@code agencyRepository.count() > 0}, so this
+ * is safe to enable against a database that already holds one or more real tenants — it adds its
+ * own separate demo agency alongside them rather than refusing to run, and never touches rows it
+ * did not create. The email check works because {@code users.email} is globally unique
+ * (see {@code V8__unique_user_email.sql}), not just per-agency.
  *
  * <p>Runs standalone, independent of {@link BootstrapRunner} — it creates its own agency and
  * admin rather than assuming bootstrap already ran, so enabling seed alone (the local-dev default,
  * see {@code application-dev.yml}) is enough. Both write through repositories directly rather than
  * the service layer: there is no HTTP caller and no {@code TenantContext} to populate, and
  * {@link AuditService#log} takes the agency/actor ids as plain arguments, so the audit trail this
- * produces is real without needing either. Do not enable this alongside {@code BOOTSTRAP_ENABLED}
- * against the same empty database — whichever {@code ApplicationRunner} Spring happens to run
- * first will create the agency the other one's "already seeded" check then sees.
+ * produces is real without needing either.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SeedRunner implements ApplicationRunner {
 
+    private static final String DEMO_ADMIN_EMAIL = "admin@demo.beduno.dev";
     private static final String DEMO_PASSWORD = "Demo12345678!";
 
     private final SeedProperties properties;
@@ -78,10 +83,9 @@ public class SeedRunner implements ApplicationRunner {
             return;
         }
 
-        var existingAgencies = agencyRepository.count();
-        if (existingAgencies > 0) {
-            log.info("Seed requested but {} agenc(y/ies) already exist; nothing to do. "
-                    + "Unset BEDUNO_SEED_ENABLED / beduno.seed.enabled.", existingAgencies);
+        if (userRepository.existsByEmail(DEMO_ADMIN_EMAIL)) {
+            log.info("Seed requested but the demo admin ({}) already exists; nothing to do. "
+                    + "Unset BEDUNO_SEED_ENABLED / beduno.seed.enabled.", DEMO_ADMIN_EMAIL);
             return;
         }
 
@@ -90,7 +94,7 @@ public class SeedRunner implements ApplicationRunner {
         agency = agencyRepository.save(agency);
         var agencyId = agency.getId();
 
-        var admin = createUser(agencyId, "admin@demo.beduno.dev", "Agata", "Admin",
+        var admin = createUser(agencyId, DEMO_ADMIN_EMAIL, "Agata", "Admin",
                 Role.AGENCY_ADMIN, new UUID[0]);
         var actorId = admin.getId();
         audit(agencyId, actorId, AuditEntityType.USER, admin.getId(), snapshot(admin));

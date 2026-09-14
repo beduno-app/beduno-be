@@ -77,13 +77,17 @@ populated database do nothing.
 
 | Variable | Description |
 |----------|-------------|
-| `BEDUNO_SEED_ENABLED` | `true` to populate a demo agency (4 users, 2 properties, 6 rooms, 8 beds, 8 workers, 7 stays) at startup, once, on an empty database. Default `false`, except the `dev` profile, where it defaults `true` |
+| `BEDUNO_SEED_ENABLED` | `true` to populate a separate demo agency (4 users, 2 properties, 6 rooms, 8 beds, 8 workers, 7 stays) at startup, once. Default `false`, except the `dev` profile, where it defaults `true` |
 
 Seeded users all share the password `Demo12345678!`: `admin@demo.beduno.dev` (`AGENCY_ADMIN`),
 `planner@demo.beduno.dev` (`AGENCY_PLANNER`), `propertyadmin@demo.beduno.dev` (`PROPERTY_ADMIN`),
-`frontdesk@demo.beduno.dev` (`FRONT_DESK`). Do not enable this against a real tenant's database —
-it is a local/demo convenience, not a migration, and it writes real rows the same way `BOOTSTRAP_*`
-does. See `SeedRunner` for exactly what it creates.
+`frontdesk@demo.beduno.dev` (`FRONT_DESK`). Unlike `BOOTSTRAP_*`, the idempotency check is scoped
+to the demo admin account itself (`admin@demo.beduno.dev`), not to the database being empty — it
+is safe to enable this on a database that already holds one or more real tenants; it adds its own
+separate agency alongside them and never touches their rows. It still writes real rows with a
+publicly-known password, so treat it as something to enable deliberately (e.g. for a sales demo
+against the live environment), not leave on where it isn't wanted. See `SeedRunner` for exactly
+what it creates.
 
 ---
 
@@ -166,6 +170,22 @@ The runner creates them only when the users table is empty and does nothing on e
 On an empty database, enabled but incomplete **fails startup** rather than booting into an API
 nobody can log into. Once a user exists the runner returns before it validates anything, so a
 half-configured `BOOTSTRAP_*` set left behind on a populated database is inert, not fatal.
+
+Optional, and safe to enable even after real tenants exist — it adds a separate demo agency
+alongside them rather than refusing to run:
+
+| Parameter | Type | Value |
+|-----------|------|-------|
+| `/beduno/prod/BEDUNO_SEED_ENABLED` | String | `true` |
+
+```bash
+aws ssm put-parameter --name /beduno/prod/BEDUNO_SEED_ENABLED --type String --overwrite --value true
+deploy/instance.sh shell   # then: sudo systemctl restart beduno.service
+```
+
+Only takes effect once `docker-compose.prod.yml` and `boot.sh` on the box forward the variable —
+if the instance was launched before this variable existed, push the updated deploy files onto it
+first (see `deploy/render-user-data.py` for what cloud-init would have written at launch).
 
 ### First launch
 

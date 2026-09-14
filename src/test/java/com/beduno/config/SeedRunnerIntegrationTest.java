@@ -1,5 +1,6 @@
 package com.beduno.config;
 
+import com.beduno.agency.Agency;
 import com.beduno.agency.AgencyRepository;
 import com.beduno.bed.BedRepository;
 import com.beduno.property.PropertyRepository;
@@ -122,6 +123,22 @@ class SeedRunnerIntegrationTest {
             assertThat(roomRepository.findAll()).allMatch(r -> r.getAgencyId().equals(agencyId));
             assertThat(bedRepository.findAll()).allMatch(b -> b.getAgencyId().equals(agencyId));
             assertThat(stayRepository.findAll()).allMatch(s -> s.getAgencyId().equals(agencyId));
+        }
+    }
+
+    @Nested
+    class AlongsideAnExistingTenant {
+
+        @Test
+        void shouldAddItsOwnAgency_whenAnotherAgencyAlreadyExists() {
+            var realAgency = new Agency();
+            realAgency.setName("Real Tenant Agency");
+            agencyRepository.save(realAgency);
+
+            runner.run(null);
+
+            assertThat(agencyRepository.count()).isEqualTo(2);
+            assertThat(userRepository.count()).isEqualTo(4);
         }
     }
 

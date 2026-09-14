@@ -57,6 +57,10 @@ services:
       BOOTSTRAP_AGENCY_NAME: ${BOOTSTRAP_AGENCY_NAME:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Populates a separate demo agency alongside whatever real tenants already exist; its
+      # idempotency check is scoped to its own demo admin account, not to the database being
+      # empty, so this is safe to leave enabled indefinitely. See SeedRunner.
+      BEDUNO_SEED_ENABLED: ${BEDUNO_SEED_ENABLED:-false}
     mem_limit: 1024m
     # application-prod.yml sets `shutdown: graceful` with a 25s per-phase timeout so a container
     # stop does not sever in-flight requests. Compose's default grace period is 10s, so that
