@@ -132,7 +132,7 @@ NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # capture BEFORE the first create_inlin
 # ... after posting ...
 if [ "$N_INLINE_ELIGIBLE" -eq 0 ] || [ "$N_INLINE_POSTED" -gt 0 ]; then
   gh api --paginate "repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments" \
-    --jq ".[] | select(.body | contains(\"<!-- pr-review:marker -->\")) | select(.created_at < \"${NOW_ISO}\") | .id" \
+    --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.created_at < \"${NOW_ISO}\") | .id" \
     | while read -r COMMENT_ID; do
         gh api --method DELETE "repos/{owner}/{repo}/pulls/comments/${COMMENT_ID}" 2>/dev/null || true
       done
@@ -140,6 +140,8 @@ fi
 ```
 
 **This condition is load-bearing — a common bug to avoid:** gating cleanup on `N_INLINE_POSTED -gt 0` alone (without the `N_INLINE_ELIGIBLE -eq 0` escape hatch) means a PR that goes from "had findings" to "clean" never gets its stale inline comments removed, since a clean run posts nothing new and the old ones linger forever pointing at lines that may no longer even exist in the diff. Post-new-then-delete-old only protects against the *failure* case — every eligible finding this run failed to post — not the *nothing-to-post* case.
+
+**Identify prior comments by author, not by the marker text.** The marker in the body (see the template above) is for a human skimming the diff to recognize an automated comment — keep writing it. But do not `select(.body | contains("<!-- pr-review:marker -->"))` to find comments to delete: composing free-text tool-call bodies is not deterministic, and in practice inline comments posted via the MCP tool have shown up without the trailing marker even though the instruction above asks for it every time, silently breaking marker-based cleanup. `github-actions[bot]` (the identity behind `secrets.GITHUB_TOKEN`, which this workflow authenticates with) is the only thing in this repo that posts PR review comments, so filtering by `.user.login` is the reliable signal — it doesn't depend on the model reproducing an exact string.
 
 ## Step 5: Post the summary comment
 
@@ -177,17 +179,19 @@ Same pattern, on the issue-comments endpoint (PR summary comments are GitHub iss
 ```bash
 if [ "$SUMMARY_POSTED" = "1" ]; then
   gh api --paginate "repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" \
-    --jq ".[] | select(.body | contains(\"<!-- pr-review:marker -->\")) | select(.created_at < \"${NOW_ISO}\") | .id" \
+    --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.created_at < \"${NOW_ISO}\") | .id" \
     | while read -r COMMENT_ID; do
         gh api --method DELETE "repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" 2>/dev/null || true
       done
 fi
 ```
 
+Same author-based identification as the inline cleanup above, for the same reason — `github-actions[bot]` is the only thing in this repo posting PR comments, so this doesn't depend on the marker string surviving free-text composition.
+
 ## Operational notes
 
 - **Never fail the workflow.** No finding, no combination of findings, exits non-zero. This is an advisory check only — the build/checkstyle/test job in `ci.yml` is what gates merges.
 - **Never edit source code or commit anything.** Read, analyze, comment — nothing else.
-- **Dedup marker is load-bearing.** Every comment this skill posts ends with `<!-- pr-review:marker -->`; the next run uses it to retire this run's own prior comments so they don't pile up across pushes.
+- **Dedup identifies prior comments by author (`github-actions[bot]`), not by the marker text.** Every comment this skill posts still ends with `<!-- pr-review:marker -->` for a human to recognize it at a glance, but cleanup keys off `.user.login` — see "Identify prior comments by author, not by the marker text" above for why.
 - **Don't echo secrets.** If a finding involves a hardcoded credential or token, redact the value in the comment — write `<REDACTED>`, never the literal string.
 - **Skip Checkstyle-shaped nitpicks.** `./gradlew build` already enforces style; repeating those findings just adds noise.
