@@ -21,6 +21,9 @@ public interface UserMapper {
     @Mapping(target = "lastLoginAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    // tokenVersion is a revocation counter owned by UserService, never taken from a request:
+    // accepting it from a client would let a caller reinstate a refresh token they had revoked.
+    @Mapping(target = "tokenVersion", ignore = true)
     @Mapping(target = "assignedPropertyIds", expression = "java(toArray(request.assignedPropertyIds()))")
     User toEntity(CreateUserRequest request);
 
@@ -30,6 +33,9 @@ public interface UserMapper {
     @Mapping(target = "lastLoginAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    // tokenVersion is a revocation counter owned by UserService, never taken from a request:
+    // accepting it from a client would let a caller reinstate a refresh token they had revoked.
+    @Mapping(target = "tokenVersion", ignore = true)
     @Mapping(target = "assignedPropertyIds", expression = "java(toArray(request.assignedPropertyIds()))")
     void updateEntity(UpdateUserRequest request, @MappingTarget User user);
 

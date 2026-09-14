@@ -443,6 +443,92 @@ class StayIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * findAllWithFilters has five optional predicates and only workerId was exercised. The
+     * date-overlap pair -- {@code date_to IS NULL OR date_to >= :dateFrom} and {@code date_from <=
+     * :dateTo} -- is the one most likely to be off by one, and its null-date branch is the only
+     * thing keeping open-ended stays in a windowed list.
+     */
+    @Nested
+    class ListFilters {
+
+        @Test
+        void shouldFilterByStatus() {
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var planned = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+            var cancelled = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), LocalDate.now().plusDays(60), LocalDate.now().plusDays(67), null);
+            restTemplate.exchange("/api/v1/stays/" + cancelled.id(), HttpMethod.DELETE,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), Void.class);
+
+            var ids = listStayIds("?status=PLANNED&size=200");
+
+            assertThat(ids).contains(planned.id()).doesNotContain(cancelled.id());
+        }
+
+        @Test
+        void shouldFilterByProperty() {
+            var propertyA = createProperty(DEFAULT_AGENCY_ID);
+            var propertyB = createProperty(DEFAULT_AGENCY_ID);
+            var roomA = createRoom(DEFAULT_AGENCY_ID, propertyA.id(), 4, 0, GenderRule.MIXED);
+            var roomB = createRoom(DEFAULT_AGENCY_ID, propertyB.id(), 4, 0, GenderRule.MIXED);
+            var atA = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), propertyA.id(),
+                    roomA.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+            var atB = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), propertyB.id(),
+                    roomB.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+
+            var ids = listStayIds("?propertyId=" + propertyA.id() + "&size=200");
+
+            assertThat(ids).contains(atA.id()).doesNotContain(atB.id());
+        }
+
+        @Test
+        void shouldReturnOnlyStaysOverlappingTheRequestedWindow() {
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var base = LocalDate.now().plusDays(100);
+            var inside = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.plusDays(2), base.plusDays(5), null);
+            var before = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.minusDays(20), base.minusDays(10), null);
+            var after = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.plusDays(30), base.plusDays(40), null);
+
+            var ids = listStayIds("?propertyId=" + property.id()
+                    + "&dateFrom=" + base + "&dateTo=" + base.plusDays(7) + "&size=200");
+
+            assertThat(ids).contains(inside.id()).doesNotContain(before.id(), after.id());
+        }
+
+        @Test
+        void shouldIncludeOpenEndedStays_whenFilteringByWindow() {
+            // The null-date branch: an open-ended stay has no dateTo, so it must be matched by the
+            // "date_to IS NULL" half or it disappears from every windowed list.
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var base = LocalDate.now().plusDays(200);
+            var openEnded = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base, null, null);
+
+            var ids = listStayIds("?propertyId=" + property.id()
+                    + "&dateFrom=" + base.plusDays(365) + "&dateTo=" + base.plusDays(400) + "&size=200");
+
+            assertThat(ids).contains(openEnded.id());
+        }
+
+        private List<UUID> listStayIds(String query) {
+            var response = restTemplate.exchange(
+                    "/api/v1/stays" + query, HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<PageResponse<StayResponse>>() {}
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            return response.getBody().content().stream().map(StayResponse::id).toList();
+        }
+    }
+
     @Nested
     class TenantIsolation {
 

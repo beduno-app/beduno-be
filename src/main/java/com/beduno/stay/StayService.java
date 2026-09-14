@@ -456,13 +456,10 @@ public class StayService {
 
     private List<ViolationDetail> toViolationDetails(List<? extends com.beduno.stay.constraint.Violation> violations) {
         return violations.stream()
-                .map(v -> new ViolationDetail(v.type(), null, v.message(), toStringMap(v.params())))
+                .map(v -> new ViolationDetail(v.type(), null, v.message(), v.params()))
                 .toList();
     }
 
-    private Map<String, Object> toStringMap(Map<String, Object> params) {
-        return params;
-    }
 
     private record BedAssignment(Bed bed, boolean autoAssigned) {}
 

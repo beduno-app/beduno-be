@@ -71,6 +71,14 @@ checkstyle {
     isIgnoreFailures = false
 }
 
+tasks.withType<JavaCompile> {
+    // A new entity field that nobody added to the corresponding response record is otherwise a
+    // WARN in a build that prints many, i.e. invisible -- and the field silently never reaches
+    // any client. ERROR makes the omission a compile failure, which is the only way an omission
+    // gets noticed.
+    options.compilerArgs.add("-Amapstruct.unmappedTargetPolicy=ERROR")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 }

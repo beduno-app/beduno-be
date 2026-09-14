@@ -8,12 +8,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,30 +20,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * its whole contract is about what is or is not already in the users table — which a mocked
  * repository cannot tell you.
  *
- * <p>Its own container, because these tests empty the schema between cases and the shared one in
- * {@code IntegrationTestBase} carries other suites' fixtures.
+ * <p>Its own database, because these tests empty the schema between cases and the shared one in
+ * {@code IntegrationTestBase} carries other suites' fixtures. Shared with the seed-runner test
+ * through {@link RunnerTestBase}: see there for why one is enough for both.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class BootstrapRunnerIntegrationTest {
+class BootstrapRunnerIntegrationTest extends RunnerTestBase {
 
     private static final String PASSWORD = "a-long-enough-password";
 
-    static final PostgreSQLContainer<?> postgres;
 
-    static {
-        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-        postgres.start();
-    }
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("beduno.jwt.secret", () -> "test-secret-key-that-is-at-least-256-bits-long-for-hs256");
-        // Off at startup so each test drives the runner itself, with the properties it wants.
-        registry.add("beduno.bootstrap.enabled", () -> "false");
-    }
 
     @Autowired
     private BootstrapRunner runner;
