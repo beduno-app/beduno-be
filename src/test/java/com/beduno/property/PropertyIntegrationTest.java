@@ -86,9 +86,14 @@ class PropertyIntegrationTest extends IntegrationTestBase {
     @Nested
     class TenantIsolation {
 
+        /**
+         * Asserting only that the caller's own property is present cannot fail if the agency
+         * filter is dropped -- the leak is the other agency's row appearing, so that is what has
+         * to be asserted against.
+         */
         @Test
         void shouldNotReturnPropertiesFromOtherAgency() {
-            createProperty(DEFAULT_AGENCY_ID);
+            var defaultAgencyProperty = createProperty(DEFAULT_AGENCY_ID);
             var otherProperty = createProperty(OTHER_AGENCY_ID);
 
             var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
@@ -97,9 +102,12 @@ class PropertyIntegrationTest extends IntegrationTestBase {
                     new HttpEntity<>(headers),
                     new ParameterizedTypeReference<PageResponse<PropertyResponse>>() {}
             );
+
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-            var ids = response.getBody().content().stream().map(PropertyResponse::id).toList();
-            assertThat(ids).contains(otherProperty.id());
+            assertThat(response.getBody().content())
+                    .extracting(PropertyResponse::id)
+                    .contains(otherProperty.id())
+                    .doesNotContain(defaultAgencyProperty.id());
         }
 
         @Test

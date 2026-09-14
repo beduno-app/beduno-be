@@ -267,7 +267,7 @@ public class OccupancyService {
         if (workerIds.isEmpty()) {
             return Map.of();
         }
-        return workerRepository.findAllById(workerIds).stream()
+        return workerRepository.findAllByAgencyIdAndIdIn(agencyId, workerIds).stream()
                 .collect(Collectors.toMap(Worker::getId, w -> w));
     }
 

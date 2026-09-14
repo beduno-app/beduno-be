@@ -83,15 +83,113 @@ class ExportIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * These files are opened in Excel and LibreOffice by design, and both evaluate a cell that
+     * starts with {@code =}, {@code +}, {@code -} or {@code @}. Room numbers and worker names are
+     * free text that agency users -- and the worker CSV import -- control, so the payload arrives
+     * through ordinary data entry.
+     */
+    @Nested
+    class FormulaInjection {
+
+        @Test
+        void shouldNeutraliseCell_whenRoomNumberStartsWithEquals() {
+            var property = createProperty();
+            createRoom(property, "=HYPERLINK(\"http://evil\",\"open\")");
+
+            var body = export(property, "EN");
+
+            assertThat(body).doesNotContain("\n=HYPERLINK");
+            assertThat(body).contains("\"'=HYPERLINK(\"\"http://evil\"\",\"\"open\"\")\"");
+        }
+
+        @Test
+        void shouldNeutraliseCell_whenRoomNumberStartsWithPlusOrAt() {
+            var property = createProperty();
+            createRoom(property, "+1");
+            createRoom(property, "@SUM(A1)");
+
+            var body = export(property, "EN");
+
+            assertThat(body).contains("\"'+1\"");
+            assertThat(body).contains("\"'@SUM(A1)\"");
+        }
+
+        @Test
+        void shouldQuoteButNotPrefix_whenValueIsOrdinaryTextWithAComma() {
+            var property = createProperty();
+            createRoom(property, "Room 1, left");
+
+            var body = export(property, "EN");
+
+            assertThat(body).contains("\"Room 1, left\"");
+            assertThat(body).doesNotContain("'Room 1");
+        }
+    }
+
+    @Nested
+    class OtherExports {
+
+        @Test
+        void shouldReturnHeader_whenExportingArrivals() {
+            // Two of the three CSV endpoints had no test at all: their headers, role gates and
+            // row shape were entirely unverified.
+            var property = createPropertyWithRoom();
+
+            var body = fetch("/api/v1/properties/" + property + "/arrivals/export?language=EN",
+                    Role.AGENCY_ADMIN, HttpStatus.OK);
+
+            assertThat(body).isNotBlank();
+            assertThat(body).doesNotContain("export.arrivals.header");
+        }
+
+        @Test
+        void shouldReturnHeader_whenExportingExceptions() {
+            var property = createPropertyWithRoom();
+
+            var body = fetch("/api/v1/properties/" + property + "/exceptions/export?language=EN",
+                    Role.AGENCY_ADMIN, HttpStatus.OK);
+
+            assertThat(body).isNotBlank();
+            assertThat(body).doesNotContain("export.exceptions.header");
+        }
+
+        @Test
+        void shouldReturnNotFound_whenPropertyDoesNotExist() {
+            fetch("/api/v1/properties/" + UUID.randomUUID() + "/occupancy/export",
+                    Role.AGENCY_ADMIN, HttpStatus.NOT_FOUND);
+        }
+    }
+
+    private String fetch(String url, Role role, HttpStatus expected) {
+        var response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders(role)), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(expected);
+        return response.getBody() == null
+                ? "" : new String(response.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     private String export(UUID propertyId, String language) {
         var url = "/api/v1/properties/" + propertyId + "/occupancy/export"
                 + (language != null ? "?language=" + language : "");
-        var response = restTemplate.exchange(
-                url, HttpMethod.GET,
-                new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), byte[].class);
+        return fetch(url, Role.AGENCY_ADMIN, HttpStatus.OK);
+    }
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        return new String(response.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+    private UUID createProperty() {
+        return restTemplate.exchange(
+                "/api/v1/properties", HttpMethod.POST,
+                new HttpEntity<>(new CreatePropertyRequest(
+                        "Property-" + UUID.randomUUID().toString().substring(0, 8), null, null, null),
+                        authHeaders(Role.AGENCY_ADMIN)),
+                PropertyResponse.class).getBody().id();
+    }
+
+    private void createRoom(UUID propertyId, String roomNumber) {
+        restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/rooms", HttpMethod.POST,
+                new HttpEntity<>(new CreateRoomRequest(roomNumber, 1, GenderRule.MIXED, null),
+                        authHeaders(Role.AGENCY_ADMIN)),
+                String.class);
     }
 
     private UUID createPropertyWithRoom() {

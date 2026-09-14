@@ -6,6 +6,7 @@ import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
+import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
@@ -25,10 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -54,6 +57,13 @@ public class WorkerService {
             "dateOfBirth", "date_of_birth",
             "createdAt", "created_at",
             "updatedAt", "updated_at");
+
+    /**
+     * Column widths from V3__create_workers.sql, indexed as the import file orders them:
+     * internalId, firstName, lastName, gender, nationality, phone, email, dateOfBirth, tags, notes.
+     * A value of -1 means the column is unbounded (text) or validated another way.
+     */
+    private static final int[] CSV_MAX_LENGTHS = {100, 100, 100, 10, 100, 50, 255, -1, -1, -1};
 
     /** The statuses in which a stay still reserves a bed, so the worker cannot be removed. */
     private static final List<StayStatus> ACTIVE_STAY_STATUSES = List.of(
@@ -192,6 +202,17 @@ public class WorkerService {
                         continue;
                     }
 
+                    // Length checks before the insert, not after. The JSON path enforces these
+                    // through Bean Validation; the CSV path enforced none, so an over-long cell
+                    // reached the column -- and because save() defers the INSERT to the next row's
+                    // duplicate check, the failure was attributed to the following row and poisoned
+                    // the transaction, losing the whole import.
+                    var tooLong = firstOverLongField(cols);
+                    if (tooLong != null) {
+                        errors.add(new WorkerImportError(row, internalId, "error.worker.import.field_too_long"));
+                        continue;
+                    }
+
                     if (workerRepository.existsByAgencyIdAndInternalId(agencyId, internalId)) {
                         skipped++;
                         continue;
@@ -217,17 +238,22 @@ public class WorkerService {
                     }
                     worker.setNotes(col(cols, 9));
                     worker.setStatus(WorkerStatus.ACTIVE);
-                    worker = workerRepository.save(worker);
+                    // Flushed here so a rejection belongs to this row rather than to the next one.
+                    worker = workerRepository.saveAndFlush(worker);
                     auditService.log(agencyId, actorId, AuditEntityType.WORKER, worker.getId(),
                             AuditAction.CREATED, null, snapshot(worker), "bulk_import");
                     created++;
-                } catch (Exception e) {
-                    log.warn("Error importing worker at row {}: {}", row, e.getMessage());
+                } catch (DateTimeParseException | IllegalArgumentException e) {
+                    // Only the parse failures a row's own content can cause. The exception message
+                    // is deliberately not logged: it echoes the offending cell, which is worker PII.
+                    log.warn("Error importing worker at row {}: {}", row, e.getClass().getSimpleName());
                     errors.add(new WorkerImportError(row, null, "error.worker.import.row_failed"));
                 }
             }
-        } catch (Exception e) {
-            throw new com.beduno.common.exception.ValidationException("error.worker.import.file_unreadable");
+        } catch (IOException e) {
+            // Narrow: a catch-all here relabelled every unexpected failure, including ones from
+            // rows already processed, as "the file cannot be read".
+            throw new ValidationException("error.worker.import.file_unreadable");
         }
 
         return new WorkerImportResult(created, skipped, errors.size(), List.copyOf(errors));
@@ -254,6 +280,17 @@ public class WorkerService {
 
     private String col(String[] cols, int index) {
         return index < cols.length ? cols[index].strip() : "";
+    }
+
+    /** The name of the first CSV column that exceeds its column width, or null if all fit. */
+    private String firstOverLongField(String[] cols) {
+        for (int i = 0; i < CSV_MAX_LENGTHS.length; i++) {
+            var max = CSV_MAX_LENGTHS[i];
+            if (max > 0 && col(cols, i).length() > max) {
+                return "column" + i;
+            }
+        }
+        return null;
     }
 
     private UUID currentUserId() {
