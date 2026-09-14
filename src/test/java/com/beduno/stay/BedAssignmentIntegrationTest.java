@@ -238,6 +238,127 @@ class BedAssignmentIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * An open-ended stay (dateTo = null) runs forever, so it overlaps every later period on the
+     * same bed and every later period for the same worker. Before the null-aware overlap queries
+     * these requests bound LocalDate.MAX and failed with 500 regardless of bed availability.
+     */
+    @Nested
+    class OpenEndedStays {
+
+        @Test
+        void shouldCreateStay_whenBedIsFreeAndDateToIsNull() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody().dateTo()).isNull();
+            assertThat(response.getBody().bedId()).isEqualTo(bed.id());
+        }
+
+        @Test
+        void shouldRejectOpenEndedStay_whenBedOccupied() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(2), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectBoundedStay_whenBedHeldByOpenEndedStay() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), null);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusYears(2), LocalDate.now().plusYears(2).plusDays(7), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectOpenEndedStay_whenWorkerAlreadyBooked() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2);
+            var beds = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).stream()
+                    .sorted(Comparator.comparing(BedResponse::label)).toList();
+
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), beds.get(0).id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), beds.get(1).id(),
+                    LocalDate.now().plusDays(2), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldCreateStay_whenOpenEndedStayStartsAfterExistingStayEnds() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var dateTo = LocalDate.now().plusDays(8);
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), dateTo);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    dateTo, null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        }
+    }
+
     @Nested
     class TenantIsolation {
 

@@ -1,5 +1,6 @@
 package com.beduno.stay.constraint.impl;
 
+import com.beduno.stay.StayDates;
 import com.beduno.stay.StayRepository;
 import com.beduno.stay.StayStatus;
 import com.beduno.stay.constraint.ConstraintContext;
@@ -9,7 +10,6 @@ import com.beduno.stay.constraint.StayConstraint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -27,7 +27,7 @@ public class DoubleBookingConstraint implements StayConstraint {
     public void evaluate(ConstraintContext ctx, List<HardViolation> hard, List<SoftViolation> soft) {
         var worker = ctx.worker();
         var agencyId = worker.getAgencyId();
-        var effectiveDateTo = ctx.dateTo() != null ? ctx.dateTo() : LocalDate.MAX;
+        var effectiveDateTo = StayDates.effectiveEnd(ctx.dateTo());
 
         long overlapping = ctx.excludeStayId() != null
                 ? stayRepository.countOverlappingStaysForWorkerExcluding(

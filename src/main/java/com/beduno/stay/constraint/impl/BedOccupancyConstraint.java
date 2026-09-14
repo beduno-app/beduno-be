@@ -1,5 +1,6 @@
 package com.beduno.stay.constraint.impl;
 
+import com.beduno.stay.StayDates;
 import com.beduno.stay.StayRepository;
 import com.beduno.stay.StayStatus;
 import com.beduno.stay.constraint.ConstraintContext;
@@ -9,14 +10,14 @@ import com.beduno.stay.constraint.StayConstraint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Replaces CapacityConstraint's room-level headcount with a per-bed occupied check, structurally
- * identical to DoubleBookingConstraint's worker-overlap check. A no-op when ctx.bed() is null --
- * no write path resolves a real bed until phase 4, see ConstraintContext's Javadoc.
+ * identical to DoubleBookingConstraint's worker-overlap check. Every write path resolves a real
+ * bed before evaluating; ctx.bed() is null only in unit tests that exercise other constraints,
+ * and the check is skipped there.
  */
 @Component
 @RequiredArgsConstructor
@@ -35,8 +36,8 @@ public class BedOccupancyConstraint implements StayConstraint {
             return;
         }
 
-        var effectiveDateTo = ctx.dateTo() != null ? ctx.dateTo() : LocalDate.MAX;
         var agencyId = bed.getAgencyId();
+        var effectiveDateTo = StayDates.effectiveEnd(ctx.dateTo());
 
         long occupied = ctx.excludeStayId() != null
                 ? stayRepository.countActiveStaysInBedExcluding(

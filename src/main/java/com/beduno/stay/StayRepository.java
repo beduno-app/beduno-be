@@ -57,40 +57,13 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             Pageable pageable
     );
 
-    @Query("""
-            SELECT COUNT(s) FROM Stay s
-            WHERE s.roomId = :roomId
-              AND s.agencyId = :agencyId
-              AND s.status IN :statuses
-              AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
-            """)
-    long countActiveStaysInRoom(
-            @Param("roomId") UUID roomId,
-            @Param("agencyId") UUID agencyId,
-            @Param("dateFrom") LocalDate dateFrom,
-            @Param("effectiveDateTo") LocalDate effectiveDateTo,
-            @Param("statuses") List<StayStatus> statuses
-    );
-
-    @Query("""
-            SELECT COUNT(s) FROM Stay s
-            WHERE s.roomId = :roomId
-              AND s.agencyId = :agencyId
-              AND s.status IN :statuses
-              AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
-              AND s.id <> :excludeId
-            """)
-    long countActiveStaysInRoomExcluding(
-            @Param("roomId") UUID roomId,
-            @Param("agencyId") UUID agencyId,
-            @Param("dateFrom") LocalDate dateFrom,
-            @Param("effectiveDateTo") LocalDate effectiveDateTo,
-            @Param("statuses") List<StayStatus> statuses,
-            @Param("excludeId") UUID excludeId
-    );
-
+    /**
+     * Half-open overlap between the candidate period [dateFrom, effectiveDateTo) and an existing
+     * stay. Callers must pass {@link StayDates#effectiveEnd(LocalDate)} rather than the raw
+     * dateTo, so that an open-ended candidate is represented by a date PostgreSQL can actually
+     * bind. A null-aware predicate is not an option here: HQL renders {@code :p IS NULL} as a
+     * bare {@code ? IS NULL}, which PostgreSQL rejects with "could not determine data type".
+     */
     @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.bedId = :bedId
@@ -107,6 +80,7 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("statuses") List<StayStatus> statuses
     );
 
+    /** As {@link #countActiveStaysInBed}, ignoring the stay being updated. */
     @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.bedId = :bedId
@@ -156,6 +130,7 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("date") LocalDate date
     );
 
+    /** Same half-open overlap semantics as {@link #countActiveStaysInBed}, keyed on the worker. */
     @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.workerId = :workerId
@@ -172,6 +147,7 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("statuses") List<StayStatus> statuses
     );
 
+    /** As {@link #countOverlappingStaysForWorker}, ignoring the stay being updated. */
     @Query("""
             SELECT COUNT(s) FROM Stay s
             WHERE s.workerId = :workerId
