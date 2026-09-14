@@ -1,0 +1,2596 @@
+openapi: 3.1.0
+info:
+  title: Beduno API
+  description: Worker housing management system for temporary work agencies
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+  description: Authentication and token management
+- name: Rooms
+  description: Room management nested under a property
+- name: Workers
+  description: Worker CRUD and CSV import
+- name: Beds
+  description: Bed management nested under a room
+- name: Stays
+  description: "Stay lifecycle: plan, check-in, check-out, move, bulk operations"
+- name: Properties
+  description: Property management
+- name: Audit
+  description: Immutable audit trail of all changes
+- name: Occupancy
+  description: "Occupancy views, exceptions, inspection, and CSV exports"
+- name: Users
+  description: Agency user management (admin-only)
+paths:
+  /api/v1/workers/{id}:
+    get:
+      tags:
+      - Workers
+      summary: Get worker by ID
+      operationId: findById
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkerResponse"
+    put:
+      tags:
+      - Workers
+      summary: Update worker
+      operationId: update
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkerRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkerResponse"
+    delete:
+      tags:
+      - Workers
+      summary: Delete worker
+      description: Soft-deletes the worker
+      operationId: delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Worker deleted
+  /api/v1/users/{id}:
+    get:
+      tags:
+      - Users
+      summary: Get user by ID
+      operationId: findById_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    put:
+      tags:
+      - Users
+      summary: Update user
+      description: "Email, name, role, language, assigned properties, and status"
+      operationId: update_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+        required: true
+      responses:
+        "409":
+          description: "Email already in use, or this is the agency's last active\
+            \ admin"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    delete:
+      tags:
+      - Users
+      summary: Deactivate user
+      description: "Sets status to INACTIVE. Never a hard delete: users are referenced\
+        \ by history (e.g. confirmed stays)."
+      operationId: deactivate
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "409":
+          description: "Cannot deactivate yourself, or the agency's last active admin"
+        "204":
+          description: User deactivated
+  /api/v1/stays/{id}:
+    get:
+      tags:
+      - Stays
+      summary: Get stay by ID
+      operationId: findById_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+    put:
+      tags:
+      - Stays
+      summary: Update stay
+      description: Change dates or room. Runs constraint engine.
+      operationId: update_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStayRequest"
+        required: true
+      responses:
+        "422":
+          description: Constraint violation
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+    delete:
+      tags:
+      - Stays
+      summary: Cancel stay
+      operationId: cancel
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Stay cancelled
+  /api/v1/properties/{propertyId}/rooms/{roomId}:
+    get:
+      tags:
+      - Rooms
+      summary: Get room by ID
+      operationId: findById_3
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+    put:
+      tags:
+      - Rooms
+      summary: Update room
+      operationId: update_3
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoomRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+    delete:
+      tags:
+      - Rooms
+      summary: Delete room
+      description: Permanently deletes the room. Refused while any stay still references
+        it.
+      operationId: delete_1
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Room deleted
+        "409":
+          description: Room still has referencing stays
+  /api/v1/properties/{propertyId}/rooms/{roomId}/beds/{bedId}:
+    get:
+      tags:
+      - Beds
+      summary: Get bed by ID
+      operationId: findById_4
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bedId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BedResponse"
+    put:
+      tags:
+      - Beds
+      summary: Update bed (rename or change status)
+      operationId: update_4
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bedId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBedRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BedResponse"
+    delete:
+      tags:
+      - Beds
+      summary: Delete bed
+      description: Permanently deletes the bed.
+      operationId: delete_2
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bedId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Bed deleted
+  /api/v1/properties/{id}:
+    get:
+      tags:
+      - Properties
+      summary: Get property by ID
+      operationId: findById_5
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PropertyResponse"
+    put:
+      tags:
+      - Properties
+      summary: Update property
+      operationId: update_5
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePropertyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PropertyResponse"
+    delete:
+      tags:
+      - Properties
+      summary: Delete property
+      description: Permanently deletes the property. Refused while any room or stay
+        still references it.
+      operationId: delete_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "409":
+          description: Property still has rooms or referencing stays
+        "204":
+          description: Property deleted
+  /api/v1/workers:
+    get:
+      tags:
+      - Workers
+      summary: List workers
+      description: "Paginated list with optional filters: status, gender, tag, name\
+        \ search"
+      operationId: findAll
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          - DELETED
+      - name: gender
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          - OTHER
+      - name: tag
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseWorkerResponse"
+    post:
+      tags:
+      - Workers
+      summary: Create worker
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkerRequest"
+        required: true
+      responses:
+        "201":
+          description: Worker created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkerResponse"
+  /api/v1/workers/import:
+    post:
+      tags:
+      - Workers
+      summary: Import workers from CSV
+      description: "Parse and create workers from a CSV file. Returns per-row summary:\
+        \ created/skipped/errors"
+      operationId: importCsv
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkerImportResult"
+  /api/v1/users:
+    get:
+      tags:
+      - Users
+      summary: List users
+      description: "Paginated list with optional filters: role, status, name/email\
+        \ search"
+      operationId: findAll_1
+      parameters:
+      - name: role
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - AGENCY_ADMIN
+          - AGENCY_PLANNER
+          - PROPERTY_ADMIN
+          - FRONT_DESK
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserResponse"
+    post:
+      tags:
+      - Users
+      summary: Create user
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+        required: true
+      responses:
+        "409":
+          description: Email already in use
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "201":
+          description: User created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/stays:
+    get:
+      tags:
+      - Stays
+      summary: List stays
+      description: "Paginated list filterable by worker, property, status, and date\
+        \ range"
+      operationId: findAll_2
+      parameters:
+      - name: workerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: propertyId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - PLANNED
+          - EXPECTED_TODAY
+          - CHECKED_IN
+          - CHECKED_OUT
+          - CANCELLED
+          - NO_SHOW
+      - name: dateFrom
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: dateTo
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseStayResponse"
+    post:
+      tags:
+      - Stays
+      summary: Plan a stay
+      description: Creates a planned stay. Runs constraint engine — returns 422 with
+        violations if hard constraints are breached.
+      operationId: create_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStayRequest"
+        required: true
+      responses:
+        "201":
+          description: Stay planned
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+        "422":
+          description: Constraint violation
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+  /api/v1/stays/{id}/no-show:
+    post:
+      tags:
+      - Stays
+      summary: No-show
+      description: Mark a stay as no_show with a reason tag
+      operationId: noShow
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoShowRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+  /api/v1/stays/{id}/move:
+    post:
+      tags:
+      - Stays
+      summary: Move worker to another room
+      description: "Atomic operation: checks out from current room, creates new stay\
+        \ in target room"
+      operationId: move
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveRequest"
+        required: true
+      responses:
+        "422":
+          description: Constraint violation on target room
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+  /api/v1/stays/{id}/check-out:
+    post:
+      tags:
+      - Stays
+      summary: Check out
+      description: Transitions a checked_in stay to checked_out. Sets actual departure
+        date if different from planned.
+      operationId: checkOut
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckOutRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+  /api/v1/stays/{id}/check-in:
+    post:
+      tags:
+      - Stays
+      summary: Check in
+      description: Transitions an expected_today stay to checked_in. Runs constraint
+        engine. Optionally overrides room.
+      operationId: checkIn
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInRequest"
+        required: true
+      responses:
+        "422":
+          description: Constraint violation — re-submit with overrideReason to force
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StayResponse"
+  /api/v1/stays/bulk-checkout:
+    post:
+      tags:
+      - Stays
+      summary: Bulk checkout stays
+      description: Checks out multiple checked_in stays in one call. Returns per-item
+        results.
+      operationId: bulkCheckout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCheckoutRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BulkCheckoutResult"
+  /api/v1/stays/bulk-assign:
+    post:
+      tags:
+      - Stays
+      summary: Bulk assign stays
+      description: Creates multiple planned stays in one call. Returns per-item results
+        including constraint violations.
+      operationId: bulkAssign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAssignRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BulkAssignResult"
+  /api/v1/properties:
+    get:
+      tags:
+      - Properties
+      summary: List properties
+      description: Paginated list with optional status and name filters
+      operationId: findAll_3
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponsePropertyResponse"
+    post:
+      tags:
+      - Properties
+      summary: Create property
+      operationId: create_3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePropertyRequest"
+        required: true
+      responses:
+        "201":
+          description: Property created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PropertyResponse"
+  /api/v1/properties/{propertyId}/rooms:
+    get:
+      tags:
+      - Rooms
+      summary: List rooms in a property
+      operationId: findAll_4
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRoomResponse"
+    post:
+      tags:
+      - Rooms
+      summary: Create room
+      operationId: create_4
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomRequest"
+        required: true
+      responses:
+        "201":
+          description: Room created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+  /api/v1/properties/{propertyId}/rooms/{roomId}/beds:
+    get:
+      tags:
+      - Beds
+      summary: List beds in a room
+      operationId: findAll_5
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BedResponse"
+    post:
+      tags:
+      - Beds
+      summary: Create a single bed
+      operationId: create_5
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBedRequest"
+        required: true
+      responses:
+        "201":
+          description: Bed created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BedResponse"
+  /api/v1/properties/{propertyId}/rooms/{roomId}/beds/bulk-generate:
+    post:
+      tags:
+      - Beds
+      summary: Bulk-generate beds
+      description: Adds count sequentially numbered beds after the room's current
+        highest numeric label
+      operationId: bulkGenerate
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: roomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkGenerateBedsRequest"
+        required: true
+      responses:
+        "201":
+          description: Beds created
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BedResponse"
+  /api/v1/properties/{propertyId}/inspection:
+    get:
+      tags:
+      - Occupancy
+      summary: Inspection roster
+      description: Room-by-room roster for nightly inspection
+      operationId: getInspectionRoster
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InspectionRoomEntry"
+    post:
+      tags:
+      - Occupancy
+      summary: Submit inspection report
+      description: "Reports discrepancies: expected workers not present, unexpected\
+        \ workers present"
+      operationId: submitInspectionReport
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectionReportRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InspectionDiscrepancyResponse"
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Auth
+      summary: Refresh token
+      description: Exchange a valid refresh token for a new token pair
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          description: Tokens refreshed
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid or expired refresh token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+      security: []
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Login
+      description: "Authenticate with email and password, receive access + refresh\
+        \ tokens"
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "429":
+          description: Rate limit exceeded
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "200":
+          description: Tokens issued
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+      security: []
+  /api/v1/stays/arrivals:
+    get:
+      tags:
+      - Stays
+      summary: Arrivals list
+      description: Returns expected_today stays for a property on a given date
+      operationId: getArrivals
+      parameters:
+      - name: propertyId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StayResponse"
+  /api/v1/properties/{propertyId}/occupancy:
+    get:
+      tags:
+      - Occupancy
+      summary: Room occupancy
+      description: Returns room-by-room list of current occupants for a property on
+        a given date
+      operationId: getOccupancy
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomOccupancyResponse"
+  /api/v1/properties/{propertyId}/occupancy/export:
+    get:
+      tags:
+      - Occupancy
+      summary: Export occupancy CSV
+      description: "Downloads nightly occupancy list as CSV. Supports language parameter\
+        \ (EN, PL, DE, RU, UA)."
+      operationId: exportOccupancy
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: language
+        in: query
+        required: false
+        schema:
+          type: string
+          default: EN
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/v1/properties/{propertyId}/exceptions:
+    get:
+      tags:
+      - Occupancy
+      summary: Occupancy exceptions
+      description: Returns over-capacity rooms and unassigned stays for a property
+        on a given date
+      operationId: getExceptions
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OccupancyExceptionResponse"
+  /api/v1/properties/{propertyId}/exceptions/export:
+    get:
+      tags:
+      - Occupancy
+      summary: Export exceptions CSV
+      description: "Downloads exception report as CSV. Supports language parameter\
+        \ (EN, PL, DE, RU, UA)."
+      operationId: exportExceptions
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: language
+        in: query
+        required: false
+        schema:
+          type: string
+          default: EN
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/v1/properties/{propertyId}/arrivals/export:
+    get:
+      tags:
+      - Occupancy
+      summary: Export arrivals CSV
+      description: "Downloads arrivals list as CSV. Supports language parameter (EN,\
+        \ PL, DE, RU, UA)."
+      operationId: exportArrivals
+      parameters:
+      - name: propertyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: language
+        in: query
+        required: false
+        schema:
+          type: string
+          default: EN
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/v1/auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Current user
+      description: Return the authenticated user's profile
+      operationId: me
+      responses:
+        "200":
+          description: User info returned
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+  /api/v1/audit:
+    get:
+      tags:
+      - Audit
+      summary: Query audit events
+      description: "Paginated audit trail filterable by entity type, entity ID, actor\
+        \ user, and date range"
+      operationId: findAll_6
+      parameters:
+      - name: entityType
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - STAY
+          - WORKER
+          - ROOM
+          - PROPERTY
+          - BED
+          - USER
+      - name: entityId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: actorUserId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: dateFrom
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: dateTo
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAuditEventResponse"
+components:
+  schemas:
+    UpdateWorkerRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          - OTHER
+        nationality:
+          type: string
+          maxLength: 100
+          minLength: 0
+        phone:
+          type: string
+          maxLength: 50
+          minLength: 0
+        email:
+          type: string
+          maxLength: 255
+          minLength: 0
+        dateOfBirth:
+          type: string
+          format: date
+        tags:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          - DELETED
+      required:
+      - firstName
+      - gender
+      - lastName
+      - status
+    WorkerResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        internalId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          - OTHER
+        nationality:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        tags:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          - DELETED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 255
+          minLength: 0
+        firstName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        role:
+          type: string
+          enum:
+          - AGENCY_ADMIN
+          - AGENCY_PLANNER
+          - PROPERTY_ADMIN
+          - FRONT_DESK
+        language:
+          type: string
+          maxLength: 5
+          minLength: 2
+        assignedPropertyIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+      required:
+      - email
+      - firstName
+      - lastName
+      - role
+      - status
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          enum:
+          - AGENCY_ADMIN
+          - AGENCY_PLANNER
+          - PROPERTY_ADMIN
+          - FRONT_DESK
+        language:
+          type: string
+        assignedPropertyIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateStayRequest:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        overrideReason:
+          type: string
+        notes:
+          type: string
+      required:
+      - dateFrom
+      - roomId
+    StayResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+          format: uuid
+        propertyId:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        bedAutoAssigned:
+          type: boolean
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - PLANNED
+          - EXPECTED_TODAY
+          - CHECKED_IN
+          - CHECKED_OUT
+          - CANCELLED
+          - NO_SHOW
+        overrideReason:
+          type: string
+        noShowReason:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateRoomRequest:
+      type: object
+      properties:
+        roomNumber:
+          type: string
+          maxLength: 100
+          minLength: 0
+        floor:
+          type: integer
+          format: int32
+        genderRule:
+          type: string
+          enum:
+          - MIXED
+          - MALE_ONLY
+          - FEMALE_ONLY
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - BLOCKED
+        notes:
+          type: string
+      required:
+      - genderRule
+      - roomNumber
+      - status
+    OccupantWorker:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        internalId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          - OTHER
+    RoomOccupant:
+      type: object
+      properties:
+        stayId:
+          type: string
+          format: uuid
+        worker:
+          $ref: "#/components/schemas/OccupantWorker"
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - PLANNED
+          - EXPECTED_TODAY
+          - CHECKED_IN
+          - CHECKED_OUT
+          - CANCELLED
+          - NO_SHOW
+    RoomResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        propertyId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        floor:
+          type: integer
+          format: int32
+        bedCount:
+          type: integer
+          format: int32
+        availableBedCount:
+          type: integer
+          format: int32
+        genderRule:
+          type: string
+          enum:
+          - MIXED
+          - MALE_ONLY
+          - FEMALE_ONLY
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - BLOCKED
+        notes:
+          type: string
+        currentOccupancy:
+          type: integer
+          format: int32
+        occupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomOccupant"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateBedRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 50
+          minLength: 0
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - BLOCKED
+      required:
+      - label
+      - status
+    BedResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - BLOCKED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdatePropertyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 0
+        address:
+          type: string
+        city:
+          type: string
+          maxLength: 100
+          minLength: 0
+        notes:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+      required:
+      - name
+      - status
+    PropertyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateWorkerRequest:
+      type: object
+      properties:
+        internalId:
+          type: string
+        firstName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        gender:
+          type: string
+          enum:
+          - MALE
+          - FEMALE
+          - OTHER
+        nationality:
+          type: string
+          maxLength: 100
+          minLength: 0
+        phone:
+          type: string
+          maxLength: 50
+          minLength: 0
+        email:
+          type: string
+          maxLength: 255
+          minLength: 0
+        dateOfBirth:
+          type: string
+          format: date
+        tags:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+      required:
+      - firstName
+      - gender
+      - internalId
+      - lastName
+    WorkerImportError:
+      type: object
+      properties:
+        row:
+          type: integer
+          format: int32
+        internalId:
+          type: string
+        reason:
+          type: string
+    WorkerImportResult:
+      type: object
+      properties:
+        created:
+          type: integer
+          format: int32
+        skipped:
+          type: integer
+          format: int32
+        errors:
+          type: integer
+          format: int32
+        errorDetails:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerImportError"
+    CreateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 255
+          minLength: 0
+        password:
+          type: string
+          maxLength: 255
+          minLength: 12
+        firstName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        role:
+          type: string
+          enum:
+          - AGENCY_ADMIN
+          - AGENCY_PLANNER
+          - PROPERTY_ADMIN
+          - FRONT_DESK
+        language:
+          type: string
+          maxLength: 5
+          minLength: 2
+        assignedPropertyIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - email
+      - firstName
+      - lastName
+      - password
+      - role
+    CreateStayRequest:
+      type: object
+      properties:
+        workerId:
+          type: string
+          format: uuid
+        propertyId:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        overrideReason:
+          type: string
+        notes:
+          type: string
+      required:
+      - dateFrom
+      - propertyId
+      - roomId
+      - workerId
+    NoShowRequest:
+      type: object
+      properties:
+        noShowReason:
+          type: string
+          maxLength: 100
+          minLength: 0
+      required:
+      - noShowReason
+    MoveRequest:
+      type: object
+      properties:
+        targetRoomId:
+          type: string
+          format: uuid
+        targetBedId:
+          type: string
+          format: uuid
+        overrideReason:
+          type: string
+      required:
+      - targetRoomId
+    CheckOutRequest:
+      type: object
+      properties:
+        actualDateTo:
+          type: string
+          format: date
+    CheckInRequest:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        overrideReason:
+          type: string
+    BulkCheckoutRequest:
+      type: object
+      properties:
+        stayIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - stayIds
+    BulkCheckoutResult:
+      type: object
+      properties:
+        checkedOut:
+          type: integer
+          format: int32
+        errors:
+          type: integer
+          format: int32
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckoutResult"
+    CheckoutResult:
+      type: object
+      properties:
+        stayId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        errorCode:
+          type: string
+    Assignment:
+      type: object
+      properties:
+        workerId:
+          type: string
+          format: uuid
+        propertyId:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        overrideReason:
+          type: string
+      required:
+      - dateFrom
+      - propertyId
+      - roomId
+      - workerId
+    BulkAssignRequest:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Assignment"
+      required:
+      - assignments
+    AssignmentResult:
+      type: object
+      properties:
+        index:
+          type: integer
+          format: int32
+        workerId:
+          type: string
+          format: uuid
+        stayId:
+          type: string
+          format: uuid
+        bedId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        errorCode:
+          type: string
+    BulkAssignResult:
+      type: object
+      properties:
+        created:
+          type: integer
+          format: int32
+        errors:
+          type: integer
+          format: int32
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignmentResult"
+    CreatePropertyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 0
+        address:
+          type: string
+        city:
+          type: string
+          maxLength: 100
+          minLength: 0
+        notes:
+          type: string
+      required:
+      - name
+    CreateRoomRequest:
+      type: object
+      properties:
+        roomNumber:
+          type: string
+          maxLength: 100
+          minLength: 0
+        floor:
+          type: integer
+          format: int32
+        genderRule:
+          type: string
+          enum:
+          - MIXED
+          - MALE_ONLY
+          - FEMALE_ONLY
+        notes:
+          type: string
+      required:
+      - roomNumber
+    CreateBedRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 50
+          minLength: 0
+      required:
+      - label
+    BulkGenerateBedsRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+    InspectionReportRequest:
+      type: object
+      properties:
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomActualOccupancy"
+      required:
+      - rooms
+    RoomActualOccupancy:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        presentWorkerIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - presentWorkerIds
+      - roomId
+    InspectionDiscrepancyResponse:
+      type: object
+      properties:
+        discrepancies:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomDiscrepancy"
+        hasDiscrepancies:
+          type: boolean
+    RoomDiscrepancy:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerDiscrepancy"
+    WorkerDiscrepancy:
+      type: object
+      properties:
+        workerId:
+          type: string
+          format: uuid
+        discrepancyType:
+          type: string
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required:
+      - refreshToken
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+        user:
+          $ref: "#/components/schemas/UserInfo"
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+        language:
+          type: string
+        assignedPropertyIds:
+          type: array
+          items:
+            type: string
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+      - email
+      - password
+    Pageable:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+        sort:
+          type: array
+          items:
+            type: string
+    PageResponseWorkerResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponseUserResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponseStayResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/StayResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponsePropertyResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponseRoomResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    OccupantSummary:
+      type: object
+      properties:
+        stayId:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        bedId:
+          type: string
+          format: uuid
+        bedLabel:
+          type: string
+    RoomOccupancyResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        floor:
+          type: integer
+          format: int32
+        bedCount:
+          type: integer
+          format: int32
+        availableBedCount:
+          type: integer
+          format: int32
+        occupiedSpots:
+          type: integer
+          format: int32
+        occupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccupantSummary"
+    InspectionRoomEntry:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        floor:
+          type: integer
+          format: int32
+        expectedOccupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccupantSummary"
+        checkedInOccupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccupantSummary"
+    OccupancyExceptionResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        exceptionType:
+          type: string
+        bedCount:
+          type: integer
+          format: int32
+        availableBedCount:
+          type: integer
+          format: int32
+        occupiedSpots:
+          type: integer
+          format: int32
+        occupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccupantSummary"
+    AuditEventResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+          enum:
+          - STAY
+          - WORKER
+          - ROOM
+          - PROPERTY
+          - BED
+          - USER
+        entityId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+          - CREATED
+          - UPDATED
+          - DELETED
+          - CHECKED_IN
+          - CHECKED_OUT
+          - NO_SHOW
+          - CANCELLED
+          - MOVED
+          - BULK_ASSIGNED
+          - BULK_CHECKED_OUT
+        actorUserId:
+          type: string
+          format: uuid
+        previousState:
+          type: object
+          additionalProperties:
+            type: object
+        newState:
+          type: object
+          additionalProperties:
+            type: object
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseAuditEventResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEventResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: JWT access token obtained from POST /api/v1/auth/login
+      scheme: bearer
+      bearerFormat: JWT

@@ -260,7 +260,22 @@ rollback.
 
 ## API Overview
 
-All endpoints are under `/api/v1/`. Full interactive docs at `/swagger-ui.html`.
+All endpoints are under `/api/v1/`. Full interactive docs at `/swagger-ui.html` (disabled in
+`prod` — see `beduno.security.public-api-docs` in `application-prod.yml`).
+
+`openapi.yaml` at the repo root is a **checked-in snapshot** of the live spec, generated from
+whatever code was checked out when it was last refreshed — it is not regenerated automatically,
+so treat it as current only as of its last commit. Consumers (e.g. the frontend repo generating
+types) should re-pull it after backend changes land rather than assume it's fresh. Regenerate it
+after any controller/DTO change:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun &
+curl -s http://localhost:8080/v3/api-docs.yaml -o openapi.yaml
+kill %1
+docker compose -f docker/docker-compose.yml down
+```
 
 ### Auth
 
