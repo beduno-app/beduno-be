@@ -2,7 +2,7 @@
 
 > **For the frontend team.** All endpoints are REST/JSON. Base URL: `/api/v1`. An OpenAPI document is generated at `/v3/api-docs` (JSON), `/v3/api-docs.yaml` (YAML) and browsable at `/swagger-ui.html` — all three are reachable without a token. Use them to generate TypeScript API clients.
 
-> **Reconciled against the implementation.** Every endpoint, field, role, status code and message code below was verified against the controllers, DTO records, validation annotations, `GlobalExceptionHandler`, `SecurityConfig`, the enums and the i18n bundles. Anything the original specification described but that was never built has been moved to **[Appendix: Specified but not implemented](#appendix-specified-but-not-implemented)** rather than deleted. Where the current behaviour looks like a bug rather than a design choice, it is called out inline as a **Caveat** — those describe what the server does today, not what it should do.
+> **Reconciled against the implementation on 2026-09-14**, following the code review in `docs/code-review-2026-09-14.md`. Every endpoint, field, role, status code and message code below was verified against the controllers, DTO records, validation annotations, `GlobalExceptionHandler`, `SecurityConfig`, the enums and the i18n bundles. `openapi.yaml` is generated from the same code and is authoritative where the two ever disagree. Anything the original specification described but that was never built has been moved to **[Appendix: Specified but not implemented](#appendix-specified-but-not-implemented)** rather than deleted. Where the current behaviour looks like a bug rather than a design choice, it is called out inline as a **Caveat** — those describe what the server does today, not what it should do.
 
 ---
 
@@ -28,7 +28,7 @@ Tokens are HS256-signed and stateless — there is no server-side session, no to
 List endpoints that return a page accept the standard Spring parameters:
 
 ```
-GET /api/v1/workers?page=0&size=20&sort=last_name,asc
+GET /api/v1/workers?page=0&size=20&sort=lastName,asc
 ```
 
 Paginated response shape (`PageResponse`):
@@ -110,10 +110,10 @@ Role denials raised in the filter chain are answered by `RestAccessDeniedHandler
 { "error": "FORBIDDEN", "message": "error.access_denied", "timestamp": "..." }
 ```
 
-> **Caveat — request-binding failures return 500.** `GlobalExceptionHandler` declares a catch-all `@ExceptionHandler(Exception.class)` and does not extend `ResponseEntityExceptionHandler`, so Spring's own MVC exceptions never reach their default handlers. A missing required query param (e.g. `GET /stays/arrivals` without `propertyId`), an unparseable UUID/date/enum in a query param, malformed JSON, or an unknown enum value in a request body all come back as **500 `INTERNAL_ERROR`** instead of 400.
+Request-binding failures are ordinary client errors: `GlobalExceptionHandler` extends `ResponseEntityExceptionHandler`, so a missing required query param, an unparseable UUID/date/enum, malformed JSON or a wrong content type return **400**/**405**/**415** in the same envelope (pinned by `ErrorContractIntegrationTest`). A uniqueness race or a lost optimistic lock returns **409** (`error.conflict`, `error.concurrent_modification`).
 
 ### Rate limiting
-`RateLimitFilter` applies **only** to paths starting with `/api/v1/auth/`: 10 requests per minute per client IP (first entry of `X-Forwarded-For`, else the socket address), refilled greedily. Over the limit:
+`RateLimitFilter` applies **only** to paths starting with `/api/v1/auth/`: 10 requests per minute per client IP, refilled greedily. The key is the peer address (`getRemoteAddr()`), *not* a forwarded header — `server.forward-headers-strategy: native` plus Caddy overwriting `X-Forwarded-For` is what makes that the real client, and it is why a forged header cannot buy a fresh bucket (`RateLimitFilterTest.ForwardedHeaderSpoofing`). Over the limit:
 
 ```json
 { "error": "RATE_LIMIT_EXCEEDED", "message": "error.rate_limit_exceeded", "timestamp": "..." }
@@ -121,7 +121,7 @@ Role denials raised in the filter chain are answered by `RestAccessDeniedHandler
 returned with **429**. No `Retry-After` header is sent.
 
 ### CORS
-`/api/**` allows any origin pattern, methods `GET, POST, PUT, DELETE, OPTIONS`, any header, credentials enabled, 1 h preflight cache.
+`/api/**` uses an **allowlist**, from `CORS_ALLOWED_ORIGINS`, with methods `GET, POST, PUT, DELETE, OPTIONS`, any header, credentials enabled and a 1 h preflight cache. The list is **empty by default in prod**, so no cross-origin caller is permitted unless one is configured.
 
 ### Timestamps & Dates
 - All timestamps are **UTC ISO 8601** instants (`2026-04-14T12:00:00Z`)
@@ -133,13 +133,23 @@ returned with **429**. No `Retry-After` header is sent.
 Tenant isolation is automatic. `TenantFilter` reads `agencyId` from the JWT into a ThreadLocal and every repository query filters on it. The frontend never sends `agencyId`. A resource belonging to another agency is indistinguishable from a missing one — both give 404.
 
 ### Property scoping — read this
-The original specification described "own property" scoping on roughly ten endpoints. In the implementation `CurrentUser.hasPropertyAccess` is called in these places:
+`PROPERTY_ADMIN` and `FRONT_DESK` are limited to the properties in their `assignedPropertyIds`
+claim. `AGENCY_ADMIN` and `AGENCY_PLANNER` are agency-wide and are never narrowed by it.
 
-- `PUT /api/v1/properties/{id}` — a `PROPERTY_ADMIN` must have the property in its assigned list
-- `POST` and `PUT` on `/api/v1/properties/{propertyId}/rooms` — same check
-- `POST` (single and `bulk-generate`) and `PUT` on `/api/v1/properties/{propertyId}/rooms/{roomId}/beds` — same check (`named-beds` change, 11 Sep 2026); `DELETE` on beds is **not** scoped this way — it is `AGENCY_ADMIN`-only regardless of assignment
+Every property-bound path is scoped: property update; rooms and beds; every stay operation,
+including read, create, update, cancel, bulk-assign, check-in, check-out, no-show, move and
+`GET /stays/arrivals`; occupancy, exceptions and both inspection endpoints; and all three CSV
+exports. Acting outside the list is **403 `error.property.access_denied`**.
 
-**Everywhere else, access is agency-wide.** A `FRONT_DESK` or `PROPERTY_ADMIN` user can read and act on stays, workers, occupancy, arrivals and inspections for *any* property in their agency, regardless of `assignedPropertyIds`. All scoped checks fail with **403 `error.property.access_denied`**.
+Two consequences worth planning for: a `PROPERTY_ADMIN` or `FRONT_DESK` token whose list is empty
+can reach no property at all, and `GET /api/v1/stays` (the paginated list) is filtered by tenant
+but not by property — pass `?propertyId=` to scope it.
+
+A cross-**agency** id is **404**, never 403, so tenancy is not leaked through error codes. `DELETE`
+on a bed is `AGENCY_ADMIN`-only regardless of assignment.
+
+> This reverses what this document said before 14 Sep 2026, when scoping reached only property
+> update, rooms and beds and everything else was agency-wide.
 
 ### Full message-code list
 
@@ -155,9 +165,10 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.rate_limit_exceeded` | auth rate limit (429) |
 | `error.worker.not_found` | worker lookups (404) |
 | `error.worker.internal_id_exists` | `POST /workers` (409) |
-| `error.worker.import.*` | CSV import row/file errors |
+| `error.worker.import.*` | CSV import row/file errors, including `field_too_long` for a cell wider than its column |
+| `error.worker.has_active_stays` | `DELETE /workers/{id}` while a PLANNED/EXPECTED_TODAY/CHECKED_IN stay references the worker (409) |
 | `error.property.not_found` | property lookups (404) |
-| `error.property.access_denied` | scoped property/room writes (403) |
+| `error.property.access_denied` | acting on a property outside `assignedPropertyIds` (403) |
 | `error.property.has_rooms`, `error.property.has_stays` | `DELETE /properties/{id}` (409) |
 | `error.room.not_found` | room lookups (404) |
 | `error.room.number_exists` | room create/update (409) |
@@ -170,6 +181,10 @@ The original specification described "own property" scoping on roughly ten endpo
 | `error.stay.cannot_update_in_current_status` | `PUT /stays/{id}` (409) |
 | `error.stay.invalid_status_transition` | check-in / check-out / no-show / cancel (409) |
 | `error.stay.cannot_move_in_current_status`, `error.stay.move_same_room`, `error.stay.cannot_move_on_last_day` | move (409) |
+| `error.stay.invalid_dates` | `dateTo` not after `dateFrom` on create/update/bulk-assign (400), or `actualDateTo` not after the arrival date on check-out (400) |
+| `error.conflict` | a database uniqueness or exclusion constraint rejected the write -- a race the pre-checks cannot win, including the bed/worker overlap constraints added in V15 (409) |
+| `error.concurrent_modification` | optimistic lock lost: someone else changed the stay first (409) |
+| `error.user.not_found`, `error.user.email_exists`, `error.user.last_admin`, `error.user.cannot_deactivate_self` | user management (404 / 409) |
 | `error.constraint.violated`, `error.constraint.soft_violations` | constraint engine (422) |
 | `constraint.*` | individual violations inside `details[]` |
 
@@ -219,7 +234,7 @@ ACTIVE | BLOCKED
 
 ### GenderRule
 ```
-ANY | MALE_ONLY | FEMALE_ONLY
+MIXED | MALE_ONLY | FEMALE_ONLY
 ```
 
 ### StayStatus
@@ -333,13 +348,13 @@ answered by the entry point like any other protected endpoint.
 ### GET /api/v1/workers
 Paginated worker list.
 
-**Query params:** `?page=0&size=20&sort=last_name,asc&status=ACTIVE&gender=MALE&tag=electrician&search=kowalski`
+**Query params:** `?page=0&size=20&sort=lastName,asc&status=ACTIVE&gender=MALE&tag=electrician&search=kowalski`
 
 - `status` — `WorkerStatus`; `gender` — `Gender`
 - `tag` — **exact** match against one element of the `tags` array (not a substring)
 - `search` — case-insensitive substring against `internalId`, `firstName`, `lastName`. It does **not** match `phone`, `email` or `nationality`.
 - Workers with status `DELETED` are always excluded, even when `status=DELETED` is requested
-- `sort` takes **snake_case column names** (see the sort table above)
+- `sort` takes **camelCase property names** from a per-endpoint whitelist (see the sort table above); anything else is a **400** `error.sort.unsupported_field`, not a 500
 
 **Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK
 
@@ -504,14 +519,14 @@ There is no `currentStay` — join stays yourself via `GET /stays?workerId=...`.
 - `status` — `PropertyStatus`
 - `search` — case-insensitive substring against **`name` OR `city`**
 - There is no `type` filter (see appendix)
-- `sort` takes **snake_case column names**
+- `sort` takes **camelCase property names** from a per-endpoint whitelist; anything else is a **400** `error.sort.unsupported_field`
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — **agency-wide for all four**, `assignedPropertyIds` is not applied here
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — **agency-wide for all four**. The *list* is not property-filtered (the same is true of `GET /stays`); the per-property endpoints below are.
 
 **Response 200:** `PageResponse<PropertyResponse>`
 
 ### GET /api/v1/properties/{id}
-**Roles:** all four, agency-wide
+**Roles:** all four; PROPERTY_ADMIN and FRONT_DESK only within their assigned properties
 
 **Response 200:** `PropertyResponse` · **404:** `error.property.not_found`
 
@@ -534,7 +549,7 @@ There is no `currentStay` — join stays yourself via `GET /stays?workerId=...`.
 ### PUT /api/v1/properties/{id}
 **Full replace.** `status` is required.
 
-**Roles:** AGENCY_ADMIN, PROPERTY_ADMIN — a `PROPERTY_ADMIN` must have this property in `assignedPropertyIds`, otherwise **403 `error.property.access_denied`**. This is one of only two scope-checked endpoints in the API.
+**Roles:** AGENCY_ADMIN, PROPERTY_ADMIN — a `PROPERTY_ADMIN` must have this property in `assignedPropertyIds`, otherwise **403 `error.property.access_denied`**.
 
 **Request:**
 ```json
@@ -596,12 +611,12 @@ Rooms are identified by **`roomNumber`** (a string, unique per property — `"10
 
 There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` takes the field names the response carries (`roomNumber`, `floor`, `genderRule`, `status`, `createdAt`, `updatedAt`); anything else is a 400.
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — the latter two only within their assigned properties
 
 **Response 200:** `PageResponse<RoomResponse>`
 
 ### GET /api/v1/properties/{propertyId}/rooms/{roomId}
-**Roles:** all four, agency-wide
+**Roles:** all four; PROPERTY_ADMIN and FRONT_DESK only within their assigned properties
 
 **Response 200:** `RoomResponse` · **404:** `error.property.not_found` or `error.room.not_found` (the room must belong to that property)
 
@@ -620,9 +635,9 @@ There are **no** `status`, `floor` or `search` filters on this endpoint. `sort` 
 
 | Field | Required | Validation |
 |-------|----------|-----------|
-| `name` | yes | `@NotBlank @Size(max=100)`, unique within the property |
-| `floor` | no | `@Size(max=50)`, **string** |
-| `genderRule` | no | defaults to `ANY` when omitted |
+| `roomNumber` | yes | `@NotBlank @Size(max=100)`, unique within the property |
+| `floor` | no | **integer** |
+| `genderRule` | no | defaults to `MIXED` when omitted |
 | `notes` | no | free text |
 
 Status is always `ACTIVE` on create. A freshly created room has no beds — generate them via `POST .../beds/bulk-generate` (see the Beds section) before it can hold any stay.
@@ -641,7 +656,7 @@ Status is always `ACTIVE` on create. A freshly created room has no beds — gene
 {
   "roomNumber": "12",
   "floor": 2,
-  "genderRule": "ANY",
+  "genderRule": "MIXED",
   "status": "ACTIVE",
   "notes": null
 }
@@ -697,12 +712,12 @@ Setting `status: BLOCKED` makes the constraint engine reject any new or moved st
 Beds are identified by **`label`** (a string, unique per room — `"1"`, `"2"`, `"top bunk"`). Bulk-generated labels are sequential integers continuing after the room's current highest *numeric* label, so renaming bed `"2"` to `"top bunk"` and generating one more gives `"2"` again, not `"3"`.
 
 ### GET /api/v1/properties/{propertyId}/rooms/{roomId}/beds
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — the latter two only within their assigned properties
 
 **Response 200:** `BedResponse[]`
 
 ### GET /api/v1/properties/{propertyId}/rooms/{roomId}/beds/{bedId}
-**Roles:** all four, agency-wide
+**Roles:** all four; PROPERTY_ADMIN and FRONT_DESK only within their assigned properties
 
 **Response 200:** `BedResponse` · **404:** `error.bed.not_found` (the bed must belong to that room)
 
@@ -770,18 +785,18 @@ Setting `status: BLOCKED` removes the bed from auto-assign candidates and makes 
 > **11 Sep 2026:** Every stay write (`POST`, `PUT`, check-in, move, bulk-assign) now accepts an optional bed override — `bedId` (`targetBedId` on move) — alongside its room. Omit it and the system auto-assigns the lowest-label free bed in the room; supply it to place the worker in that exact bed. Every stay read now reports `bedId` and `bedAutoAssigned`. See `V11`-`V14` and `context/changes/named-beds/plan.md`.
 
 ### GET /api/v1/stays
-**Query params:** `?page=0&size=20&sort=date_from,desc&workerId=uuid&propertyId=uuid&status=CHECKED_IN&dateFrom=2026-04-01&dateTo=2026-04-30`
+**Query params:** `?page=0&size=20&sort=dateFrom,desc&workerId=uuid&propertyId=uuid&status=CHECKED_IN&dateFrom=2026-04-01&dateTo=2026-04-30`
 
 - There is **no `roomId` filter**
 - `dateFrom`/`dateTo` select stays that **overlap** the window: `(dateTo IS NULL OR dateTo >= dateFrom_param)` and `(dateFrom <= dateTo_param)`
-- `sort` takes **snake_case column names**
+- `sort` takes **camelCase property names** from a per-endpoint whitelist; anything else is a **400** `error.sort.unsupported_field`
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide for all four
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — the latter two only within their assigned properties
 
 **Response 200:** `PageResponse<StayResponse>`
 
 ### GET /api/v1/stays/{id}
-**Roles:** all four, agency-wide
+**Roles:** all four; PROPERTY_ADMIN and FRONT_DESK only within their assigned properties
 
 **Response 200:** `StayResponse` · **404:** `error.stay.not_found`
 
@@ -985,7 +1000,7 @@ Expected arrivals for one property on one date.
 
 Returns exactly the stays whose `status = EXPECTED_TODAY` **and** `dateFrom = date`. Because only the daily scheduler promotes `PLANNED → EXPECTED_TODAY`, querying a future date returns an empty list.
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — the latter two only within their assigned properties
 
 **Response 200:** a **bare JSON array** of `StayResponse`. No wrapper object, no `property`, no `summary`, no pagination.
 
@@ -1145,9 +1160,12 @@ Room-by-room occupancy for one date.
 
 **Query params:** `?date=2026-04-14` (defaults to today)
 
-Counts only stays with `status = CHECKED_IN` that span the date (`dateFrom <= date` and `dateTo` null or `> date`). Rooms with no occupants are included with an empty `occupants` array.
+Counts only stays with `status = CHECKED_IN` that span the date (`dateFrom <= date` and `dateTo`
+null or `> date`). A checked-in stay whose planned `dateTo` has already passed still counts, up to
+today: the worker was never checked out and is physically in the bed, so dropping him would free
+his bed for someone else. Rooms with no occupants are included with an empty `occupants` array.
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — agency-wide
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK — the latter two only within their assigned properties
 
 **Response 200:** a **bare JSON array** of `RoomOccupancyResponse`. No `property` object, no `summary`, no pagination.
 
@@ -1173,7 +1191,7 @@ Rooms that need attention on a date.
 
 **Query params:** `?date=2026-04-14` (defaults to today)
 
-**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, **FRONT_DESK** — agency-wide
+**Roles:** AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, **FRONT_DESK** — the latter two only within their assigned properties
 
 **Response 200:** a **bare JSON array** of `OccupancyExceptionResponse`.
 
@@ -1191,14 +1209,22 @@ Rooms that need attention on a date.
 ]
 ```
 
-`exceptionType` is one of exactly two values:
+`exceptionType` is one of five values. The first four are a data-integrity safety net over
+historical and backfilled data — the constraint engine and, since V15, the database's exclusion
+constraints prevent new violations at write time.
 
 | Value | Meaning | `occupants[]` contains |
 |-------|---------|------------------------|
-| `OVER_CAPACITY` | checked-in occupants exceed the room's `availableBedCount` (ACTIVE bed count) — a data-integrity safety net over historical/backfilled data; going forward `BedOccupancyConstraint`/the bed-blocked check prevent new violations at write time | the checked-in occupants |
-| `PENDING_ARRIVAL` | at least one `EXPECTED_TODAY` stay for this room, and the room is not over capacity | the expected (not yet arrived) occupants |
+| `OVER_CAPACITY` | checked-in occupants exceed the room's `availableBedCount` (ACTIVE bed count) | the checked-in occupants |
+| `BED_CONFLICT` | two or more checked-in stays share one bed. Invisible to the headcount above, because two people on one bed of a two-bed room is still within capacity | the conflicting occupants |
+| `BED_BLOCKED_OCCUPIED` | a checked-in stay sits on a bed that is `BLOCKED`, or on one no longer in the room | the affected occupants |
+| `OVERSTAY` | checked in with a planned `dateTo` on or before the requested date, and never checked out | the overstaying occupants |
+| `PENDING_ARRIVAL` | at least one `EXPECTED_TODAY` stay for this room | the expected (not yet arrived) occupants |
 
-At most one entry per room — `OVER_CAPACITY` takes precedence. Rooms with neither condition are omitted. There is no worker-centric `UNASSIGNED_WORKER` exception.
+A room can produce **several** entries — the conditions are independent, and an earlier one no
+longer suppresses a later one. `occupiedSpots` always reports the room's checked-in headcount
+whatever the type is about; `occupants[]` carries only the stays that entry concerns. Rooms with
+no condition are omitted. There is no worker-centric `UNASSIGNED_WORKER` exception.
 
 ### CSV exports
 
@@ -1348,13 +1374,6 @@ Everything below appeared in the original specification and **is not built**. Th
 
 | Was specified as | Status |
 |------------------|--------|
-| `GET /api/v1/users` | **Not built.** There is no `UserController` at all — the entire Users section is unimplemented. Users exist only as a database table and JWT subject; they can be created and managed solely by direct database access. |
-| `POST /api/v1/users` | **Not built.** No endpoint. |
-| `GET /api/v1/users/{id}` | **Not built.** No endpoint. |
-| `PUT /api/v1/users/{id}` | **Not built.** No endpoint. |
-| `DELETE /api/v1/users/{id}` | **Not built.** No endpoint; there is no user deactivation path. |
-| `PUT /api/v1/users/me/language` | **Not built.** No endpoint; `User.language` can only be changed in the database. |
-| `UserResponse` (with `status`, `lastLoginAt`, `createdAt`) | **Not built.** The only user payload in the API is `AuthResponse.UserInfo` (§1), which has no `status`, `lastLoginAt` or `createdAt`. |
 | `GET /api/v1/workers/{id}/stays` | **Not built.** No endpoint. Use `GET /api/v1/stays?workerId={id}` instead — same data, paginated, with the documented stay filters. |
 | `POST /api/v1/properties/{propertyId}/rooms/bulk` | **Not built.** No endpoint. Create rooms one at a time with `POST /properties/{propertyId}/rooms`. |
 | `GET /api/v1/dashboard` | **Not built.** There is no dashboard controller, service or aggregate query anywhere in the codebase. |
@@ -1367,7 +1386,7 @@ Everything below appeared in the original specification and **is not built**. Th
 | `PropertyType` (`INTERNAL` \| `PARTNER`) | **Not built.** There is no `PropertyType` enum, no `type` column on `properties`, no `type` field on any request or response, and no `?type=` filter. |
 | `StayStatus.MOVED` | **Not built.** `StayStatus` has no `MOVED` constant. A move sets the original stay to `CHECKED_OUT` and creates a new `CHECKED_IN` stay (§9). `MOVED` exists only as an **`AuditAction`**, recorded against the new stay. |
 | `WorkerStatus.BLACKLISTED` | **Not built.** `WorkerStatus` is `ACTIVE \| INACTIVE \| DELETED`. |
-| `GenderRule.MIXED` / `GenderRule.PER_ROOM` | **Not built.** `GenderRule` is `ANY \| MALE_ONLY \| FEMALE_ONLY`, and it lives on the room only — properties have no gender rule. `ANY` is the closest equivalent of `MIXED`. |
+| `GenderRule.PER_ROOM` | **Not built.** `GenderRule` is `MIXED \| MALE_ONLY \| FEMALE_ONLY` (V9 renamed `ANY` to `MIXED`) and lives on the room only — properties have no gender rule. |
 | `EntityStatus.MAINTENANCE` | **Not built.** There is no shared `EntityStatus`. `PropertyStatus` is `ACTIVE \| INACTIVE`; `RoomStatus` is `ACTIVE \| BLOCKED`. |
 | `AuditAction.IMPORTED` | **Not built.** CSV-imported workers are logged as `CREATED` with `reason: "bulk_import"`. |
 | `Language` as an enum | **Not built.** `User.language` is an unvalidated `String` (§Enums). |

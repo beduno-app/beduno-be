@@ -318,6 +318,29 @@ returns **401** with an `ErrorResponse` body. Any request to a protected endpoin
 without a valid token also returns **401**; a valid token with an insufficient
 role returns **403** — both with the same `ErrorResponse` envelope.
 
+### Users
+
+| Method | Path | Roles |
+|--------|------|-------|
+| `GET`    | `/api/v1/users`, `/api/v1/users/{id}` | AGENCY_ADMIN |
+| `POST`   | `/api/v1/users` | AGENCY_ADMIN |
+| `PUT`    | `/api/v1/users/{id}` | AGENCY_ADMIN |
+| `DELETE` | `/api/v1/users/{id}` | AGENCY_ADMIN. Deactivates (`status = INACTIVE`) rather than deleting: `stays.confirmed_by_user_id` references the row. |
+
+Admin-only throughout, because every response carries the email and role of every account in the
+agency. Two guards apply to both `PUT` and `DELETE`: the last active `AGENCY_ADMIN` cannot be
+demoted or deactivated (`409 error.user.last_admin`), and neither route lets a caller deactivate
+themselves (`409 error.user.cannot_deactivate_self`).
+
+Deactivation is a real revocation: login and refresh both refuse a non-ACTIVE account, and
+deactivating bumps the user's token version, which invalidates their outstanding refresh token
+immediately. Their current access token still works until it expires (at most an hour) — inherent
+to a stateless access token.
+
+Email is unique across the whole table, not per agency, because login resolves a user by email
+alone with no agency selector. `POST` therefore returns `409 error.user.email_exists` for an
+address already used in *any* agency.
+
 ### Workers
 
 | Method | Path | Roles |
@@ -345,31 +368,45 @@ role returns **403** — both with the same `ErrorResponse` envelope.
 AGENCY_PLANNER can only read properties and rooms — it has no create/update/delete
 access on either.
 
+### Beds
+
+| Method | Path | Roles |
+|--------|------|-------|
+| `GET`    | `/api/v1/properties/{id}/rooms/{roomId}/beds`, `.../beds/{bedId}` | AGENCY_ADMIN, AGENCY_PLANNER, PROPERTY_ADMIN, FRONT_DESK |
+| `POST`   | `/api/v1/properties/{id}/rooms/{roomId}/beds` | AGENCY_ADMIN, PROPERTY_ADMIN |
+| `POST`   | `/api/v1/properties/{id}/rooms/{roomId}/beds/bulk-generate` | AGENCY_ADMIN, PROPERTY_ADMIN. Adds `count` beds (max 200) labelled as integers continuing from the room's highest numeric label. |
+| `PUT`    | `/api/v1/properties/{id}/rooms/{roomId}/beds/{bedId}` | AGENCY_ADMIN, PROPERTY_ADMIN. Relabel, or set `status` to `BLOCKED` / `ACTIVE`. |
+| `DELETE` | `/api/v1/properties/{id}/rooms/{roomId}/beds/{bedId}` | AGENCY_ADMIN. Hard delete guarded by a `409` conflict check if any stay references the bed. |
+
+A bed is the unit of occupancy: a stay names one, `stays.bed_id` is `NOT NULL`, and a `BLOCKED`
+bed is excluded from auto-assignment and rejected on explicit assignment. Bed endpoints are
+property-scoped like rooms.
+
 ### Stays
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET`    | `/api/v1/stays` | List stays (filter by worker, property, status, dates) |
 | `GET`    | `/api/v1/stays/{id}` | Get a single stay |
-| `POST`   | `/api/v1/stays` | Plan a stay — runs constraint engine |
-| `PUT`    | `/api/v1/stays/{id}` | Update stay — runs constraint engine |
+| `POST`   | `/api/v1/stays` | Plan a stay — runs constraint engine. A stay whose `dateFrom` is today or earlier is created `EXPECTED_TODAY` rather than `PLANNED`, so it can be checked in at once. |
+| `PUT`    | `/api/v1/stays/{id}` | Update stay — runs constraint engine. The status is reconciled with the new `dateFrom` in both directions: postponing an `EXPECTED_TODAY` stay returns it to `PLANNED`. |
 | `DELETE` | `/api/v1/stays/{id}` | Cancel stay |
 | `GET`    | `/api/v1/stays/arrivals` | Expected arrivals for a property |
-| `POST`   | `/api/v1/stays/{id}/check-in` | Check in — runs constraint engine |
+| `POST`   | `/api/v1/stays/{id}/check-in` | Check in — runs constraint engine. With no `bedId` and no room change the stay keeps its planned bed; only a room change re-assigns. |
 | `POST`   | `/api/v1/stays/{id}/check-out` | Check out |
 | `POST`   | `/api/v1/stays/{id}/no-show` | Mark no-show (reason stored in a dedicated `no_show_reason` field, doesn't overwrite `notes`) |
 | `POST`   | `/api/v1/stays/{id}/move` | Move to another room (atomic) — runs constraint engine. Returns `409` if attempted on the stay's final day (no night left to reassign). |
-| `POST`   | `/api/v1/stays/bulk-assign` | Bulk plan multiple stays — runs constraint engine per item |
-| `POST`   | `/api/v1/stays/bulk-checkout` | Bulk checkout multiple stays |
+| `POST`   | `/api/v1/stays/bulk-assign` | Bulk plan multiple stays (max 500) — runs constraint engine per item. Business failures are reported per item in the response body with `200`; a database-level failure rolls the whole batch back. |
+| `POST`   | `/api/v1/stays/bulk-checkout` | Bulk checkout multiple stays (max 500) |
 
 ### Occupancy
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/properties/{id}/occupancy` | Room-by-room occupants |
-| `GET` | `/api/v1/properties/{id}/exceptions` | Over-capacity / unassigned |
-| `GET` | `/api/v1/properties/{id}/inspection` | Nightly inspection roster (PROPERTY_ADMIN only) |
-| `POST` | `/api/v1/properties/{id}/inspection` | Submit discrepancy report (PROPERTY_ADMIN only) |
+| `GET` | `/api/v1/properties/{id}/exceptions` | Data-integrity and attention list: `OVER_CAPACITY`, `BED_CONFLICT` (two workers on one bed), `BED_BLOCKED_OCCUPIED`, `OVERSTAY` (checked in past the planned end date), `PENDING_ARRIVAL` |
+| `GET` | `/api/v1/properties/{id}/inspection` | Nightly inspection roster (AGENCY_ADMIN, PROPERTY_ADMIN) |
+| `POST` | `/api/v1/properties/{id}/inspection` | Submit discrepancy report (AGENCY_ADMIN, PROPERTY_ADMIN) |
 | `GET` | `/api/v1/properties/{id}/occupancy/export` | CSV export (`?language=EN\|PL\|DE\|RU\|UA`, defaults to `EN`) |
 | `GET` | `/api/v1/properties/{id}/arrivals/export` | CSV export (`?language=EN\|PL\|DE\|RU\|UA`, defaults to `EN`) |
 | `GET` | `/api/v1/properties/{id}/exceptions/export` | CSV export (`?language=EN\|PL\|DE\|RU\|UA`, defaults to `EN`) |
@@ -389,17 +426,28 @@ All five languages (EN, PL, DE, RU, UA) are fully translated for exports.
 | Role | Access |
 |------|--------|
 | `AGENCY_ADMIN` | Full access across the agency |
-| `AGENCY_PLANNER` | Read workers, plan/view/update stays, view properties/rooms, `POST /stays/bulk-checkout`, full `GET /audit` |
-| `PROPERTY_ADMIN` | Update own assigned property, manage rooms, check-in/out/move/no-show, inspection roster and reports, plan/view stays, view properties |
-| `FRONT_DESK` | Check-in/out/move/no-show, `GET /properties/{id}/exceptions`, `GET .../arrivals/export`, `POST /stays/bulk-checkout`, read-only otherwise |
+| `AGENCY_PLANNER` | Read workers, plan/view/update/cancel stays, bulk-assign, view properties/rooms, `GET /audit` (USER events excluded) |
+| `PROPERTY_ADMIN` | Everything above within its assigned properties, plus manage rooms and beds, update the property, check-in/out/move/no-show, inspection roster and reports |
+| `FRONT_DESK` | Within its assigned properties: check-in/out/move/no-show, `POST /stays/bulk-checkout`, `GET /properties/{id}/exceptions`, `GET .../arrivals/export`, read-only otherwise |
 
-**Property scoping is limited.** A `PROPERTY_ADMIN`'s "assigned properties" list
-(`assignedPropertyIds` on the JWT) is only actually enforced on two endpoints:
-`PUT /properties/{id}` and room create/update (`POST`/`PUT /properties/{id}/rooms/...`).
-Everywhere else — stays (including check-in/out/move/no-show), occupancy views,
-exceptions, inspection, and all CSV exports — access is agency-wide regardless of
-assigned properties. Treat property assignment as advisory outside those two
-enforced paths.
+`AGENCY_ADMIN` has full access, the operational endpoints included: check-in, check-out,
+no-show, move and both inspection endpoints all admit it. `AGENCY_PLANNER` plans but does not
+operate a front desk, so it is excluded from those and from `bulk-checkout`, which carries the
+same role set as single check-out.
+
+`GET /audit` is open to `AGENCY_ADMIN` and `AGENCY_PLANNER`, but `USER` events are filtered out
+for anyone but an admin: their state snapshots carry every account's email and role, which is the
+same roster `/api/v1/users` is admin-only to protect.
+
+**Property scoping is enforced.** A `PROPERTY_ADMIN`'s or `FRONT_DESK`'s assigned properties
+(`assignedPropertyIds` on the JWT) gate every property-bound path: property update, rooms, beds,
+every stay operation (including check-in/out/move/no-show, create, bulk-assign and arrivals),
+occupancy, exceptions, inspection, and all three CSV exports. Acting outside the list returns
+`403 error.property.access_denied`. A token for one of these roles with an empty list therefore
+reaches no property at all.
+
+`AGENCY_ADMIN` and `AGENCY_PLANNER` are agency-wide by definition and are not narrowed by the
+list. Cross-*agency* ids remain `404`, never `403`, so tenancy is not leaked through error codes.
 
 ---
 
@@ -408,10 +456,20 @@ enforced paths.
 Stay creation, updates, check-in, move, and bulk-assign all run a constraint
 engine before persisting:
 
-- **CapacityConstraint** (hard) — room capacity minus blocked spots
+- **BedOccupancyConstraint** (hard) — the bed is already taken for an overlapping period
+  (`BED_OCCUPIED`). Replaced the old room-capacity headcount when V13 dropped `capacity`.
 - **DoubleBookingConstraint** (hard) — same worker overlapping stays
-- **BlockedRoomConstraint** (hard) — room or property not in ACTIVE status
+- **BlockedRoomConstraint** (hard) — room or property not ACTIVE, or the bed is `BLOCKED`
+  (`BED_BLOCKED`)
 - **GenderConstraint** (soft) — gender rule on room
+
+Auto-assignment reports `BED_UNAVAILABLE` when a room has no bed that satisfies every hard
+constraint for the requested period.
+
+The engine is an application-level check, and under concurrency two requests can both pass it
+before either inserts. Since V15 the database carries matching exclusion constraints on
+`(bed_id, period)` and `(worker_id, period)`, so that race ends in a `409` rather than a double
+booking.
 
 Both hard and soft violations return `HTTP 422`. They are distinguished by the
 error's message code: `error.constraint.violated` for a hard violation (cannot be

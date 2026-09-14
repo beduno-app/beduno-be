@@ -56,7 +56,7 @@ class ConstraintEngineTest {
     void setUp() {
         engine = new ConstraintEngine(List.of(
                 new BlockedRoomConstraint(),
-                new CapacityConstraint(stayRepository),
+                new BedOccupancyConstraint(stayRepository, clock),
                 new DoubleBookingConstraint(stayRepository),
                 new GenderConstraint()));
     }
@@ -115,7 +115,13 @@ public class TestBuilders {
 ### Setup
 - Use `@SpringBootTest` with Testcontainers for PostgreSQL
 - Flyway runs migrations automatically against the test container
-- Each test class gets a clean database state via `@Transactional` rollback or explicit cleanup
+- **There is no rollback and no cleanup between tests.** `IntegrationTestBase` shares one
+  container and one Spring context across the whole suite, and nothing truncates between cases,
+  so every test sees rows left by every test before it. Write tests that do not care: give each
+  fixture a unique id (`UUID.randomUUID()` in names, internal ids, emails), assert on the rows
+  you created rather than on counts or on "the list is empty", and never assume an empty table.
+  The two startup-runner tests are the exception -- they do empty the schema, which is exactly
+  why they use their own database via `RunnerTestBase`
 
 ### What to Integration Test
 - **API endpoints**: request validation, response structure, status codes, error format

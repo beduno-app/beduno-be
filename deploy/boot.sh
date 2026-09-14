@@ -31,9 +31,9 @@ POSTGRES_PASSWORD="$(param /beduno/prod/POSTGRES_PASSWORD)"
 JWT_SECRET="$(param /beduno/prod/JWT_SECRET)"
 APP_IMAGE="$(param /beduno/prod/APP_IMAGE)"
 
-# There is no user-management API, so the first agency and administrator are created at startup
-# from these. Store them before the first launch, then delete them once you have logged in --
-# they are a standing copy of an administrator password, re-read at every boot.
+# A fresh database has no accounts and every endpoint needs an authenticated caller, so the first
+# agency and administrator are created at startup from these. Delete them once you have logged in
+# and made the real accounts via /api/v1/users: they are a standing copy of an admin password.
 BOOTSTRAP_ENABLED="$(param_optional /beduno/prod/BOOTSTRAP_ENABLED)"
 BOOTSTRAP_AGENCY_NAME="$(param_optional /beduno/prod/BOOTSTRAP_AGENCY_NAME)"
 BOOTSTRAP_ADMIN_EMAIL="$(param_optional /beduno/prod/BOOTSTRAP_ADMIN_EMAIL)"
@@ -61,9 +61,9 @@ fi
 #   trailing<spaces>        -> trailing         (trailing whitespace is trimmed)
 #   'quoted-looking         -> parse failure    (a leading quote opens a quoted value)
 #
-# This matters most for the admin password: the bootstrap runs once on an empty database and
-# there is no user-management API, so a mangled password locks the deployment out of its own
-# administrator account with no way back except editing Postgres by hand.
+# This matters most for the admin password: the bootstrap runs once on an empty database and its
+# account is the only one there is, so a mangled password locks the deployment out with no way
+# back except editing Postgres by hand.
 #
 # Double-quoting the value settles all four. Inside double quotes the parser still expands
 # escapes and interpolations, so backslash, quote and dollar each need escaping first -- in that

@@ -22,7 +22,7 @@ The MVP proves Beduno can be the reliable system of record for bed occupancy acr
 
 | # | Capability | Description |
 |---|-----------|-------------|
-| 1 | Room capacity inventory | Properties > Rooms > Capacity (spots), gender rule toggle, blocked rooms/spots |
+| 1 | Bed inventory | Properties > Rooms > Beds, gender rule toggle, blocked rooms and beds. Occupancy is per named bed; the original spot-count model was replaced in V10-V14 |
 | 2 | Worker directory | Internal ID, name, phone, gender, notes/tags |
 | 3 | Stay assignment (date-based) | Worker <> Property/Room with dates + status (planned/checked-in/checked-out/no-show) |
 | 4 | Arrivals workflow | "Expected today" list + one-tap check-in + no-show tracking |
@@ -47,7 +47,7 @@ Reality is owned by the property side. Agency plans, property confirms.
 - **Agency Planner** creates planned stays (who should arrive, dates, preferred property/room)
 - **Property Admin** manages room inventory + capacity rules
 - **Front Desk / Shift Lead** performs operational actions (check-in/out, room move, mark no-show)
-- **Agency Admin** reviews audit log; full agency-wide access. User and permission management is **not yet implemented** — there is no user-management API (no `UserController` or `AgencyController`); users can currently only be created directly via SQL/seed data.
+- **Agency Admin** reviews the audit log and manages users (`/api/v1/users`, admin-only); full agency-wide access. Agencies themselves still have no API — the first one is created by the bootstrap runner at startup.
 
 ### Key Design Principle
 
