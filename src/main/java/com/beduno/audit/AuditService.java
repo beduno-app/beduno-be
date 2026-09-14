@@ -69,12 +69,10 @@ public class AuditService {
     @Transactional(readOnly = true)
     public AuditEventResponse findById(UUID id) {
         var agencyId = TenantContext.requireAgencyId();
-        var event = auditRepository.findByIdAndAgencyId(id, agencyId)
+        return auditRepository.findByIdAndAgencyId(id, agencyId)
+                .filter(event -> event.getEntityType() != hiddenEntityType())
+                .map(auditMapper::toResponse)
                 .orElseThrow(() -> new NotFoundException("error.audit.not_found"));
-        if (event.getEntityType() == hiddenEntityType()) {
-            throw new NotFoundException("error.audit.not_found");
-        }
-        return auditMapper.toResponse(event);
     }
 
     /**
