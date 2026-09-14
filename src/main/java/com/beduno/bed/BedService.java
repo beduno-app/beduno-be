@@ -97,10 +97,16 @@ public class BedService {
         return created.stream().map(bedMapper::toResponse).toList();
     }
 
+    /**
+     * Labels are free text up to 50 characters, so a purely numeric one can be far wider than a
+     * long. Capping the match at 18 digits keeps {@code parseLong} total: a wider label is simply
+     * not treated as a number, instead of throwing and making every later bulk-generate for that
+     * room fail with a 500.
+     */
     private long highestNumericLabel(List<Bed> beds) {
         return beds.stream()
                 .map(Bed::getLabel)
-                .filter(label -> label.matches("\\d+"))
+                .filter(label -> label.matches("\\d{1,18}"))
                 .mapToLong(Long::parseLong)
                 .max()
                 .orElse(0L);

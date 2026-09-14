@@ -68,6 +68,47 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().roomId()).isEqualTo(room.id());
         }
 
+        /**
+         * Dates were never validated in the application: the chk_stays_dates CHECK was the only
+         * guard and reaching it produced a 500 with a stack trace, not a field error.
+         */
+        @Test
+        void shouldReturnBadRequest_whenDateToEqualsDateFrom() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var date = LocalDate.now().plusDays(1);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), room.id(), null, date, date, null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("error.stay.invalid_dates");
+        }
+
+        @Test
+        void shouldReturnBadRequest_whenDateToBeforeDateFrom() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), room.id(), null,
+                    LocalDate.now().plusDays(8), LocalDate.now().plusDays(1), null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
         @Test
         void shouldRejectCreate_whenFrontDesk() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);

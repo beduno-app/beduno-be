@@ -74,6 +74,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Last line of defence for uniqueness and CHECK constraints that the services guard with a
+     * check-then-act pre-check. Those pre-checks close the ordinary case but cannot close a race:
+     * two callers can both see "no such email" and only one INSERT survives. Reporting that as 500
+     * told the loser the server was broken, when the correct answer is "retry, someone got there
+     * first". The message stays generic on purpose -- the specific constraint that fired names
+     * rows the caller may not be allowed to know exist.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
+            org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Database rejected a write: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("CONFLICT", "error.conflict"));
+    }
+
+    /**
+     * {@code Stay} carries an {@code @Version} column, so two concurrent check-ins on one stay
+     * collide and the loser lands here. That is a retryable conflict, not a server fault.
+     */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(
+            org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+        log.warn("Optimistic lock lost on {}", ex.getPersistentClassName());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("CONFLICT", "error.concurrent_modification"));
+    }
+
+    /**
      * Overrides the base class rather than declaring a second {@code @ExceptionHandler} for this
      * type: two handlers claiming one exception in the same advice is an ambiguous mapping and
      * fails the context at startup.

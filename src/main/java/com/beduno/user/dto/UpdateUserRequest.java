@@ -15,7 +15,7 @@ public record UpdateUserRequest(
         @NotBlank @Size(max = 100) String firstName,
         @NotBlank @Size(max = 100) String lastName,
         @NotNull Role role,
-        @Size(min = 2, max = 5) String language,
+        @NotBlank @Size(min = 2, max = 5) String language,
         List<UUID> assignedPropertyIds,
         @NotNull UserStatus status
 ) {}

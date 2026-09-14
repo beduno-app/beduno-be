@@ -266,6 +266,12 @@ public class StayService {
         }
         var previous = snapshot(stay);
         if (request.actualDateTo() != null) {
+            // A worker who leaves the day he arrived is a real case, but the half-open period
+            // cannot express it: chk_stays_dates requires date_to > date_from, and reaching it
+            // meant a 500 and no check-out at all.
+            if (!request.actualDateTo().isAfter(stay.getDateFrom())) {
+                throw new ValidationException("error.stay.invalid_dates");
+            }
             stay.setDateTo(request.actualDateTo());
         }
         stay.setStatus(StayStatus.CHECKED_OUT);
@@ -380,7 +386,9 @@ public class StayService {
             );
         }
 
-        if (result.hasWarnings() && overrideReason == null) {
+        // Blank counts as absent. An empty string suppressed the warning just as well as a real
+        // justification did, and was then persisted and audited as the reason it was overridden.
+        if (result.hasWarnings() && (overrideReason == null || overrideReason.isBlank())) {
             throw new ConstraintViolationException(
                     "error.constraint.soft_violations",
                     toViolationDetails(result.softViolations())
