@@ -35,4 +35,6 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
             Pageable pageable);
 
     Optional<Property> findByIdAndAgencyId(UUID id, UUID agencyId);
+
+    boolean existsByIdAndAgencyId(UUID id, UUID agencyId);
 }

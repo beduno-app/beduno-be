@@ -161,7 +161,7 @@ public class RoomService {
      */
     private Map<UUID, List<RoomOccupant>> occupantsByRoom(UUID agencyId, UUID propertyId) {
         var stays = stayRepository.findActiveStaysForPropertyOnDate(
-                agencyId, propertyId, LocalDate.now(clock), OCCUPYING_STATUSES);
+                agencyId, propertyId, LocalDate.now(clock), LocalDate.now(clock), OCCUPYING_STATUSES);
         if (stays.isEmpty()) {
             return Map.of();
         }

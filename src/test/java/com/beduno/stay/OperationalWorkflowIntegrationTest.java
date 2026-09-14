@@ -10,6 +10,7 @@ import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
 import com.beduno.occupancy.dto.InspectionRoomEntry;
 import com.beduno.occupancy.dto.OccupancyExceptionResponse;
+import com.beduno.occupancy.dto.OccupantSummary;
 import com.beduno.occupancy.dto.RoomActualOccupancy;
 import com.beduno.occupancy.dto.RoomOccupancyResponse;
 import com.beduno.property.dto.CreatePropertyRequest;
@@ -604,6 +605,83 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(exception.get().exceptionType()).isEqualTo("OVER_CAPACITY");
         }
 
+        /**
+         * A worker whose planned dateTo has passed but who was never checked out is still in the
+         * building. Requiring dateTo > today made him vanish from occupancy, freed his bed for
+         * someone else, and left the inspector reporting him as UNEXPECTED_PRESENT.
+         */
+        @Test
+        void shouldStillShowCheckedInWorker_whenPlannedDateToHasPassed() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+            // The stay ran [yesterday, today): half-open, so today he should already be gone --
+            // but he was never checked out and is still in the bed.
+            jdbcTemplate.update("UPDATE stays SET date_to = ? WHERE id = ?",
+                    LocalDate.now(), stay.id());
+
+            var occupancy = getOccupancy(property.id(), LocalDate.now()).stream()
+                    .filter(r -> r.roomId().equals(room.id())).findFirst().orElseThrow();
+
+            assertThat(occupancy.occupiedSpots()).isEqualTo(1);
+            assertThat(occupancy.occupants()).extracting(OccupantSummary::workerId).contains(worker.id());
+        }
+
+        @Test
+        void shouldReturnOverstayException_whenPlannedDateToHasPassed() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+            // The stay ran [yesterday, today): half-open, so today he should already be gone --
+            // but he was never checked out and is still in the bed.
+            jdbcTemplate.update("UPDATE stays SET date_to = ? WHERE id = ?",
+                    LocalDate.now(), stay.id());
+
+            var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
+                    .filter(e -> e.roomId().equals(room.id())).toList();
+
+            assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType).contains("OVERSTAY");
+        }
+
+        /**
+         * The room-level headcount check cannot see this: two workers on one bed of a two-bed room
+         * keeps the count within capacity. It is exactly the shape of the V12 backfill defect.
+         */
+        @Test
+        void shouldReturnException_whenTwoWorkersCheckedInOnSameBed() {
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var first = checkedInStay(worker1.id(), property.id(), room.id());
+            var second = checkedInStay(worker2.id(), property.id(), room.id());
+            // Force the conflict the engine would refuse, the way corrupted data would look.
+            jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", first.bedId(), second.id());
+
+            var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
+                    .filter(e -> e.roomId().equals(room.id())).toList();
+
+            assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType).contains("BED_CONFLICT");
+            var conflict = exceptions.stream()
+                    .filter(e -> e.exceptionType().equals("BED_CONFLICT")).findFirst().orElseThrow();
+            assertThat(conflict.occupants()).extracting(OccupantSummary::workerId)
+                    .containsExactlyInAnyOrder(worker1.id(), worker2.id());
+        }
+
+        @Test
+        void shouldReturnNotFound_whenPropertyDoesNotExist() {
+            // All four occupancy endpoints used to answer an unknown or foreign id with an empty
+            // list, which reads as "this property is empty" and differs from every other module.
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + UUID.randomUUID() + "/occupancy?date=" + LocalDate.now(),
+                    HttpMethod.GET, new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
         // Documents a known gap (test-plan.md Risk #3, research.md Open Question 1): OccupancyController
         // performs no property-scope check today, so a PROPERTY_ADMIN whose assignedPropertyIds does
         // NOT include this property can still read its occupancy. Sibling case to the check-in
@@ -693,6 +771,59 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(roomDiscrepancy.get().items())
                     .extracting(d -> d.discrepancyType())
                     .contains("EXPECTED_NOT_PRESENT");
+        }
+
+        /**
+         * A mobile inspector scanning a room in two passes sends it twice. Collectors.toMap with
+         * no merge function made that an IllegalStateException, reported as a 500.
+         */
+        @Test
+        void shouldMergeDuplicateRoomEntries_whenReportRepeatsARoom() {
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            checkedInStay(worker1.id(), property.id(), room.id());
+            checkedInStay(worker2.id(), property.id(), room.id());
+
+            var report = new InspectionReportRequest(List.of(
+                    new RoomActualOccupancy(room.id(), List.of(worker1.id())),
+                    new RoomActualOccupancy(room.id(), List.of(worker2.id()))
+            ));
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(report, authHeaders(Role.PROPERTY_ADMIN)),
+                    InspectionDiscrepancyResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            // Both passes together account for everyone expected, so the merged report matches.
+            assertThat(response.getBody().hasDiscrepancies()).isFalse();
+        }
+
+        @Test
+        void shouldReportOneDiscrepancy_whenAWorkerIdIsRepeated() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            checkedInStay(worker.id(), property.id(), room.id());
+            var stranger = createWorker();
+
+            var report = new InspectionReportRequest(List.of(
+                    new RoomActualOccupancy(room.id(), List.of(worker.id(), stranger.id(), stranger.id()))
+            ));
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(report, authHeaders(Role.PROPERTY_ADMIN)),
+                    InspectionDiscrepancyResponse.class
+            );
+
+            var items = response.getBody().discrepancies().stream()
+                    .filter(d -> d.roomId().equals(room.id())).findFirst().orElseThrow().items();
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).discrepancyType()).isEqualTo("UNEXPECTED_PRESENT");
         }
 
         @Test
@@ -890,6 +1021,14 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
                 HttpMethod.GET,
                 new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
                 new ParameterizedTypeReference<List<StayResponse>>() {}
+        ).getBody();
+    }
+
+    private List<OccupancyExceptionResponse> getExceptions(UUID propertyId, LocalDate date) {
+        return restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/exceptions?date=" + date, HttpMethod.GET,
+                new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                new ParameterizedTypeReference<List<OccupancyExceptionResponse>>() {}
         ).getBody();
     }
 

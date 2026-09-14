@@ -10,6 +10,8 @@ import com.beduno.stay.constraint.StayConstraint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +30,7 @@ public class BedOccupancyConstraint implements StayConstraint {
     );
 
     private final StayRepository stayRepository;
+    private final Clock clock;
 
     @Override
     public void evaluate(ConstraintContext ctx, List<HardViolation> hard, List<SoftViolation> soft) {
@@ -38,12 +41,13 @@ public class BedOccupancyConstraint implements StayConstraint {
 
         var agencyId = bed.getAgencyId();
         var effectiveDateTo = StayDates.effectiveEnd(ctx.dateTo());
+        var today = LocalDate.now(clock);
 
         long occupied = ctx.excludeStayId() != null
                 ? stayRepository.countActiveStaysInBedExcluding(
-                        bed.getId(), agencyId, ctx.dateFrom(), effectiveDateTo, OCCUPYING_STATUSES, ctx.excludeStayId())
+                        bed.getId(), agencyId, ctx.dateFrom(), effectiveDateTo, today, OCCUPYING_STATUSES, ctx.excludeStayId())
                 : stayRepository.countActiveStaysInBed(
-                        bed.getId(), agencyId, ctx.dateFrom(), effectiveDateTo, OCCUPYING_STATUSES);
+                        bed.getId(), agencyId, ctx.dateFrom(), effectiveDateTo, today, OCCUPYING_STATUSES);
 
         if (occupied > 0) {
             hard.add(new HardViolation(

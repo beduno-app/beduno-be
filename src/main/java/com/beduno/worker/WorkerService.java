@@ -9,6 +9,8 @@ import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
+import com.beduno.stay.StayRepository;
+import com.beduno.stay.StayStatus;
 import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.UpdateWorkerRequest;
 import com.beduno.worker.dto.WorkerImportResult;
@@ -53,9 +55,14 @@ public class WorkerService {
             "createdAt", "created_at",
             "updatedAt", "updated_at");
 
+    /** The statuses in which a stay still reserves a bed, so the worker cannot be removed. */
+    private static final List<StayStatus> ACTIVE_STAY_STATUSES = List.of(
+            StayStatus.PLANNED, StayStatus.EXPECTED_TODAY, StayStatus.CHECKED_IN);
+
     private final WorkerRepository workerRepository;
     private final WorkerMapper workerMapper;
     private final AuditService auditService;
+    private final StayRepository stayRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<WorkerResponse> findAll(WorkerStatus status, Gender gender, String tag, String search, Pageable pageable) {
@@ -110,9 +117,25 @@ public class WorkerService {
         return workerMapper.toResponse(worker);
     }
 
+    /**
+     * Soft delete, guarded by the worker's active stays.
+     *
+     * <p>Flipping the status alone left those stays fully active: they still occupied their beds
+     * for the constraint engine, so the bed stayed reserved and auto-assign skipped it forever,
+     * while every stay operation that loads the worker -- update, check-in, move -- began failing
+     * with "worker not found". The stay could be neither used nor fixed, and nothing told the
+     * admin any of it.
+     */
     @Transactional
     public void delete(UUID id) {
         var worker = getWorkerOrThrow(id);
+
+        var activeStays = stayRepository.countActiveStaysForWorker(
+                worker.getId(), worker.getAgencyId(), ACTIVE_STAY_STATUSES);
+        if (activeStays > 0) {
+            throw new ConflictException("error.worker.has_active_stays");
+        }
+
         var previous = snapshot(worker);
         worker.setStatus(WorkerStatus.DELETED);
         worker.setDeletedAt(Instant.now());

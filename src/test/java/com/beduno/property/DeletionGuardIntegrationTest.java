@@ -119,6 +119,57 @@ class DeletionGuardIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * A worker is soft-deleted rather than removed, so no RESTRICT foreign key stops it -- which
+     * is precisely why the guard has to exist in the application. Flipping the status while stays
+     * remained active left the bed reserved for a worker that every stay path then refused to
+     * load, and nothing surfaced the contradiction.
+     */
+    @Nested
+    class WorkerDeletion {
+
+        @Test
+        void shouldReturnConflict_whenWorkerHasActiveStay() {
+            var property = createProperty();
+            var room = createRoom(property.id());
+            var stay = createStay(property.id(), room.id());
+
+            var response = deleteWorker(stay.workerId());
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).contains("error.worker.has_active_stays");
+        }
+
+        @Test
+        void shouldDeleteWorker_whenOnlyTerminalStaysReferenceThem() {
+            var property = createProperty();
+            var room = createRoom(property.id());
+            var stay = createStay(property.id(), room.id());
+            restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.DELETE,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), String.class);
+
+            var response = deleteWorker(stay.workerId());
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        }
+
+        @Test
+        void shouldDeleteWorker_whenNoStaysReferenceThem() {
+            var worker = createWorker();
+
+            var response = deleteWorker(worker.id());
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        }
+    }
+
+    private org.springframework.http.ResponseEntity<String> deleteWorker(UUID workerId) {
+        return restTemplate.exchange(
+                "/api/v1/workers/" + workerId, HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), String.class);
+    }
+
     private org.springframework.http.ResponseEntity<String> deleteProperty(UUID propertyId) {
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId, HttpMethod.DELETE,

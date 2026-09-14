@@ -63,6 +63,12 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
      * dateTo, so that an open-ended candidate is represented by a date PostgreSQL can actually
      * bind. A null-aware predicate is not an option here: HQL renders {@code :p IS NULL} as a
      * bare {@code ? IS NULL}, which PostgreSQL rejects with "could not determine data type".
+     *
+     * <p>A CHECKED_IN stay occupies its bed until at least {@code today}, whatever its planned
+     * dateTo says: a worker whose contract was extended without anyone updating the stay is still
+     * physically in the bed, and offering it to somebody else put two people in it. It does not
+     * occupy beyond today -- a booking that starts after today is only blocked by the stay's own
+     * planned dates, since the overstay is expected to be resolved rather than to run forever.
      */
     @Query("""
             SELECT COUNT(s) FROM Stay s
@@ -70,13 +76,15 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
               AND s.agencyId = :agencyId
               AND s.status IN :statuses
               AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom
+                   OR (s.status = com.beduno.stay.StayStatus.CHECKED_IN AND :today >= :dateFrom))
             """)
     long countActiveStaysInBed(
             @Param("bedId") UUID bedId,
             @Param("agencyId") UUID agencyId,
             @Param("dateFrom") LocalDate dateFrom,
             @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("today") LocalDate today,
             @Param("statuses") List<StayStatus> statuses
     );
 
@@ -87,7 +95,8 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
               AND s.agencyId = :agencyId
               AND s.status IN :statuses
               AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom
+                   OR (s.status = com.beduno.stay.StayStatus.CHECKED_IN AND :today >= :dateFrom))
               AND s.id <> :excludeId
             """)
     long countActiveStaysInBedExcluding(
@@ -95,6 +104,7 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("agencyId") UUID agencyId,
             @Param("dateFrom") LocalDate dateFrom,
             @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("today") LocalDate today,
             @Param("statuses") List<StayStatus> statuses,
             @Param("excludeId") UUID excludeId
     );
@@ -111,18 +121,30 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
     @Query("SELECT s FROM Stay s WHERE s.status = com.beduno.stay.StayStatus.PLANNED AND s.dateFrom <= :date")
     List<Stay> findPlannedArrivingOnOrBefore(@Param("date") LocalDate date);
 
+    /**
+     * Who is in the building on a given date.
+     *
+     * <p>A CHECKED_IN stay counts regardless of its planned end date. The planned dateTo is an
+     * intention, not a fact: extending a contract without updating the stay is routine, and nothing
+     * auto-checks-out. Requiring {@code dateTo > date} made an overstaying worker vanish from
+     * occupancy and from the inspection roster (where the inspector then reported him as
+     * UNEXPECTED_PRESENT) while his bed was offered to somebody else. The override applies only up
+     * to {@code today}: who will still be in the building on a future date is a plan, not a fact.
+     */
     @Query("""
             SELECT s FROM Stay s
             WHERE s.agencyId = :agencyId
               AND s.propertyId = :propertyId
               AND s.status IN :statuses
               AND s.dateFrom <= :date
-              AND (s.dateTo IS NULL OR s.dateTo > :date)
+              AND (s.dateTo IS NULL OR s.dateTo > :date
+                   OR (s.status = com.beduno.stay.StayStatus.CHECKED_IN AND :date <= :today))
             """)
     List<Stay> findActiveStaysForPropertyOnDate(
             @Param("agencyId") UUID agencyId,
             @Param("propertyId") UUID propertyId,
             @Param("date") LocalDate date,
+            @Param("today") LocalDate today,
             @Param("statuses") List<StayStatus> statuses
     );
 
@@ -139,6 +161,23 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("date") LocalDate date
     );
 
+    /**
+     * Stays that still reserve a bed for this worker, whatever their dates. Backs the delete guard
+     * on workers: a soft-deleted worker whose stays stay active holds a bed nobody can use and
+     * cannot be checked in, because every stay path that loads the worker now 404s.
+     */
+    @Query("""
+            SELECT COUNT(s) FROM Stay s
+            WHERE s.workerId = :workerId
+              AND s.agencyId = :agencyId
+              AND s.status IN :statuses
+            """)
+    long countActiveStaysForWorker(
+            @Param("workerId") UUID workerId,
+            @Param("agencyId") UUID agencyId,
+            @Param("statuses") List<StayStatus> statuses
+    );
+
     /** Same half-open overlap semantics as {@link #countActiveStaysInBed}, keyed on the worker. */
     @Query("""
             SELECT COUNT(s) FROM Stay s
@@ -146,13 +185,15 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
               AND s.agencyId = :agencyId
               AND s.status IN :statuses
               AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom
+                   OR (s.status = com.beduno.stay.StayStatus.CHECKED_IN AND :today >= :dateFrom))
             """)
     long countOverlappingStaysForWorker(
             @Param("workerId") UUID workerId,
             @Param("agencyId") UUID agencyId,
             @Param("dateFrom") LocalDate dateFrom,
             @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("today") LocalDate today,
             @Param("statuses") List<StayStatus> statuses
     );
 
@@ -163,7 +204,8 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
               AND s.agencyId = :agencyId
               AND s.status IN :statuses
               AND s.dateFrom < :effectiveDateTo
-              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom)
+              AND (s.dateTo IS NULL OR s.dateTo > :dateFrom
+                   OR (s.status = com.beduno.stay.StayStatus.CHECKED_IN AND :today >= :dateFrom))
               AND s.id <> :excludeId
             """)
     long countOverlappingStaysForWorkerExcluding(
@@ -171,6 +213,7 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("agencyId") UUID agencyId,
             @Param("dateFrom") LocalDate dateFrom,
             @Param("effectiveDateTo") LocalDate effectiveDateTo,
+            @Param("today") LocalDate today,
             @Param("statuses") List<StayStatus> statuses,
             @Param("excludeId") UUID excludeId
     );

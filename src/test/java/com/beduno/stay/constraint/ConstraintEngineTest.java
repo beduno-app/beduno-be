@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -34,14 +35,17 @@ class ConstraintEngineTest {
     @Mock
     private StayRepository stayRepository;
 
+    /** The constraints only read the clock to bound overstay occupancy; any fixed instant will do. */
+    private static final Clock FIXED_CLOCK = Clock.systemDefaultZone();
+
     private ConstraintEngine engine;
 
     @BeforeEach
     void setUp() {
         var constraints = List.<StayConstraint>of(
                 new BlockedRoomConstraint(),
-                new BedOccupancyConstraint(stayRepository),
-                new DoubleBookingConstraint(stayRepository),
+                new BedOccupancyConstraint(stayRepository, FIXED_CLOCK),
+                new DoubleBookingConstraint(stayRepository, FIXED_CLOCK),
                 new GenderConstraint()
         );
         engine = new ConstraintEngine(constraints);
@@ -73,7 +77,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -89,7 +93,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().status(PropertyStatus.INACTIVE).build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -105,7 +109,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -120,8 +124,8 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
@@ -138,8 +142,8 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
@@ -156,7 +160,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -170,8 +174,8 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(1L);
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), any(), anyList())).thenReturn(1L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
@@ -188,8 +192,8 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(0L);
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
@@ -206,8 +210,8 @@ class ConstraintEngineTest {
 
             var ctxWithExclude = ctx(worker, room, property, bed, excludeId);
 
-            when(stayRepository.countActiveStaysInBedExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
-            when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBedExcluding(any(), any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
 
             var result = engine.evaluate(ctxWithExclude);
 
@@ -225,7 +229,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(1L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(1L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -241,7 +245,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -258,7 +262,7 @@ class ConstraintEngineTest {
 
             var ctxWithExclude = ctx(worker, room, property, null, excludeId);
 
-            when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorkerExcluding(any(), any(), any(), any(), any(), anyList(), any())).thenReturn(0L);
 
             var result = engine.evaluate(ctxWithExclude);
 
@@ -276,7 +280,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.MALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -293,7 +297,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -310,7 +314,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -323,7 +327,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.MALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -336,7 +340,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.OTHER).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -356,7 +360,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().status(PropertyStatus.INACTIVE).build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(1L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(1L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
@@ -371,8 +375,8 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().gender(Gender.FEMALE).build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), anyList())).thenReturn(1L);
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countActiveStaysInBed(any(), any(), any(), any(), any(), anyList())).thenReturn(1L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property, bed, null));
 
@@ -392,7 +396,7 @@ class ConstraintEngineTest {
             var worker = TestBuilders.aWorker().build();
             var property = TestBuilders.aProperty().build();
 
-            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), anyList())).thenReturn(0L);
+            when(stayRepository.countOverlappingStaysForWorker(any(), any(), any(), any(), any(), anyList())).thenReturn(0L);
 
             var result = engine.evaluate(ctx(worker, room, property));
 
