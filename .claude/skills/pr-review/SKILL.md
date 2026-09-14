@@ -90,7 +90,7 @@ Merge the three agents' output into one list. Sort CRITICAL → WARNING → OBSE
 
 ## Step 4: Post inline comments
 
-Findings with a `file:line` that lands inside the PR's diff become inline comments. Everything else (no line anchor, or the line isn't in a changed hunk) goes to the summary only.
+Findings with a `file:line` that lands inside the PR's diff become inline comments. Everything else (no line anchor, or the line isn't in a changed hunk) goes to the summary only. Set `N_INLINE_ELIGIBLE` to the count in the first group *before* attempting to post any of them — this is the number this run *should* produce, independent of how posting actually goes, and the cleanup step below needs it.
 
 ```bash
 line_in_diff() {
@@ -121,16 +121,16 @@ mcp__github_inline_comment__create_inline_comment({
 
 Severity icons: ❌ CRITICAL · ⚠️ WARNING · 👁 OBSERVATION. Always pair the icon with the word — never a bare icon.
 
-Track `N_INLINE_POSTED`. A failed call (line drifted, file renamed) moves that finding to the summary-only list instead of retrying.
+Track `N_INLINE_POSTED` and `N_INLINE_ELIGIBLE` (the count of findings that *should* have been posted inline this run, before any failures). These are different things: `N_INLINE_POSTED == 0` because there was nothing to post (a clean run) must clean up old comments same as any other successful run; `N_INLINE_POSTED == 0` because posting failed must not.
 
 ### Clean up prior run's inline comments
 
-Only after at least one new inline comment posted successfully this run, delete this PR's prior `pr-review` inline comments (identified by the marker) that predate this run:
+Delete this PR's prior `pr-review` inline comments (identified by the marker) that predate this run — **unless** this run had findings to post and every single one failed, in which case leave the old comments as the only visible feedback:
 
 ```bash
 NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # capture BEFORE the first create_inline_comment call
 # ... after posting ...
-if [ "$N_INLINE_POSTED" -gt 0 ]; then
+if [ "$N_INLINE_ELIGIBLE" -eq 0 ] || [ "$N_INLINE_POSTED" -gt 0 ]; then
   gh api --paginate "repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments" \
     --jq ".[] | select(.body | contains(\"<!-- pr-review:marker -->\")) | select(.created_at < \"${NOW_ISO}\") | .id" \
     | while read -r COMMENT_ID; do
@@ -139,7 +139,7 @@ if [ "$N_INLINE_POSTED" -gt 0 ]; then
 fi
 ```
 
-Post-new-then-delete-old, same reasoning as `10x-impl-review-ci`: if every new post failed, don't erase the only visible feedback reviewers have.
+**This condition is load-bearing — a common bug to avoid:** gating cleanup on `N_INLINE_POSTED -gt 0` alone (without the `N_INLINE_ELIGIBLE -eq 0` escape hatch) means a PR that goes from "had findings" to "clean" never gets its stale inline comments removed, since a clean run posts nothing new and the old ones linger forever pointing at lines that may no longer even exist in the diff. Post-new-then-delete-old only protects against the *failure* case — every eligible finding this run failed to post — not the *nothing-to-post* case.
 
 ## Step 5: Post the summary comment
 
