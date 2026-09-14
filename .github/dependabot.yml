@@ -1,0 +1,42 @@
+version: 2
+
+# Nothing in the build or in CI checked dependencies for known vulnerabilities, and the Spring Boot
+# BOM sat pinned at a release that had left OSS support -- so the API's transitive Tomcat, Spring
+# Security and pgjdbc versions aged silently while POST /workers/import kept accepting multipart
+# uploads. Dependabot is the cheap half of the answer: it opens a PR, CI runs the full suite
+# against it, and a human decides. It replaces nobody's judgement, it just makes the aging visible.
+#
+# Chosen over a build-time scanner (OWASP dependency-check) deliberately: that needs an NVD API key,
+# adds minutes to every build, and fails the build on advisories nobody has triaged yet -- which
+# turns into a disabled check. Dependabot's alerts arrive out of band and never block a deploy.
+updates:
+  # Application dependencies. Grouped so a Spring Boot bump arrives as one reviewable PR rather
+  # than thirty, since the BOM moves its managed versions together anyway.
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      spring:
+        patterns:
+          - "org.springframework*"
+          - "org.springframework.boot*"
+      test-libraries:
+        patterns:
+          - "org.testcontainers*"
+          - "org.junit*"
+          - "org.assertj*"
+
+  # The actions in ci.yml pin major versions, which still float across releases.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+
+  # Both base images are pinned by digest (see docker/Dockerfile), so nothing updates them unless
+  # something is watching. This is that something.
+  - package-ecosystem: docker
+    directory: "/docker"
+    schedule:
+      interval: weekly

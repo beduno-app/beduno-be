@@ -2,7 +2,7 @@
 
 Worker housing management system for temporary work agencies.
 
-**Stack**: Java 21 · Spring Boot 3.4 · PostgreSQL 16 · Flyway · JWT
+**Stack**: Java 21 · Spring Boot 3.5 · PostgreSQL 16 · Flyway · JWT
 
 ---
 

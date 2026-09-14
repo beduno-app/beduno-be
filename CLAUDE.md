@@ -2,7 +2,7 @@
 
 ## Project
 
-Beduno is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.4 + PostgreSQL 16.
+Beduno is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.5 + PostgreSQL 16.
 
 ## Build & Test
 

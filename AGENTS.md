@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-Beduno is a worker-housing management API for temporary work agencies: Java 21, Spring Boot 3.4, PostgreSQL 16, Flyway, JWT. See @README.md for endpoints and environment variables, @CLAUDE.md and @docs/coding-guidelines.md for depth.
+Beduno is a worker-housing management API for temporary work agencies: Java 21, Spring Boot 3.5, PostgreSQL 16, Flyway, JWT. See @README.md for endpoints and environment variables, @CLAUDE.md and @docs/coding-guidelines.md for depth.
 
 ## Hard Rules
 

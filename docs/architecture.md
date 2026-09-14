@@ -9,7 +9,7 @@
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
 | Language | Java 21 | LTS, virtual threads, pattern matching, records |
-| Framework | Spring Boot 3.4 | Mature ecosystem, security, i18n, actuator |
+| Framework | Spring Boot 3.5 | Mature ecosystem, security, i18n, actuator |
 | Build | Gradle (Kotlin DSL) | Faster builds, better dependency management |
 | Database | PostgreSQL 16 | JSONB for flexible fields, row-level security, mature |
 | Migrations | Flyway | Version-controlled schema migrations |
