@@ -7,9 +7,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
+
+    Optional<AuditEvent> findByIdAndAgencyId(UUID id, UUID agencyId);
 
     /**
      * Deliberately unordered. A Pageable's sort is appended as its own {@code order by}, so a

@@ -3,6 +3,7 @@ package com.beduno.audit;
 import com.beduno.common.model.SortFields;
 import com.beduno.audit.dto.AuditEventResponse;
 import com.beduno.common.model.PageResponse;
+import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
 import com.beduno.user.Role;
@@ -58,6 +59,22 @@ public class AuditService {
                 agencyId, entityType, hiddenEntityType(), entityId, actorUserId, dateFrom, dateTo,
                 SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(auditMapper::toResponse));
+    }
+
+    /**
+     * Same visibility rule as {@link #findAll}: a USER event is invisible to anyone but an
+     * AGENCY_ADMIN, so drilling into one directly by id can't be used to route around the filter
+     * the list endpoint applies.
+     */
+    @Transactional(readOnly = true)
+    public AuditEventResponse findById(UUID id) {
+        var agencyId = TenantContext.requireAgencyId();
+        var event = auditRepository.findByIdAndAgencyId(id, agencyId)
+                .orElseThrow(() -> new NotFoundException("error.audit.not_found"));
+        if (event.getEntityType() == hiddenEntityType()) {
+            throw new NotFoundException("error.audit.not_found");
+        }
+        return auditMapper.toResponse(event);
     }
 
     /**
