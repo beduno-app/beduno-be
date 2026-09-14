@@ -73,6 +73,28 @@ class StayIntegrationTest extends IntegrationTestBase {
          * guard and reaching it produced a 500 with a stack trace, not a field error.
          */
         @Test
+        void shouldRejectCreate_whenRoomBelongsToOtherProperty() {
+            // propertyId came from the request and roomId was resolved by agency only, so the two
+            // never had to agree. The resulting stay is absent from every occupancy view.
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var otherProperty = createProperty(DEFAULT_AGENCY_ID);
+            var foreignRoom = createRoom(DEFAULT_AGENCY_ID, otherProperty.id(), 4, 0, GenderRule.MIXED);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), foreignRoom.id(), null,
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8), null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).contains("error.room.not_found");
+        }
+
+        @Test
         void shouldReturnBadRequest_whenDateToEqualsDateFrom() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
             var property = createProperty(DEFAULT_AGENCY_ID);

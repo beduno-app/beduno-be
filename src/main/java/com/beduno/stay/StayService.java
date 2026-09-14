@@ -7,6 +7,7 @@ import com.beduno.common.model.SortFields;
 import com.beduno.audit.AuditAction;
 import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
+import com.beduno.common.exception.BusinessException;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.ConstraintViolationException;
 import com.beduno.common.exception.ConstraintViolationException.ViolationDetail;
@@ -39,6 +40,7 @@ import com.beduno.worker.Worker;
 import com.beduno.worker.WorkerRepository;
 import com.beduno.worker.WorkerStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -54,6 +56,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class StayService {
 
     /**
@@ -97,11 +100,11 @@ public class StayService {
         var agencyId = TenantContext.requireAgencyId();
 
         var worker = getWorkerOrThrow(request.workerId(), agencyId);
-        var room = getRoomOrThrow(request.roomId(), agencyId);
         var property = getPropertyOrThrow(request.propertyId(), agencyId);
+        var room = getRoomInPropertyOrThrow(request.roomId(), request.propertyId(), agencyId);
 
         var assignment = resolveBed(room, worker, property,
-                request.dateFrom(), request.dateTo(), request.bedId(), null);
+                request.dateFrom(), request.dateTo(), request.bedId(), null, null);
         var ctx = new ConstraintContext(worker, room, property,
                 request.dateFrom(), request.dateTo(), null, assignment.bed());
         runConstraints(ctx, request.overrideReason());
@@ -127,11 +130,11 @@ public class StayService {
         }
 
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
-        var room = getRoomOrThrow(request.roomId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
+        var room = getRoomInPropertyOrThrow(request.roomId(), stay.getPropertyId(), agencyId);
 
-        var assignment = resolveBed(room, worker, property,
-                request.dateFrom(), request.dateTo(), request.bedId(), stay.getId());
+        var assignment = resolveBedKeepingCurrent(stay, room, worker, property,
+                request.dateFrom(), request.dateTo(), request.bedId(), request.roomId());
         var ctx = new ConstraintContext(worker, room, property,
                 request.dateFrom(), request.dateTo(), stay.getId(), assignment.bed());
         runConstraints(ctx, request.overrideReason());
@@ -163,22 +166,26 @@ public class StayService {
         }
 
         var targetRoomId = request.roomId() != null ? request.roomId() : stay.getRoomId();
-        var room = getRoomOrThrow(targetRoomId, agencyId);
+        var room = getRoomInPropertyOrThrow(targetRoomId, stay.getPropertyId(), agencyId);
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
 
-        var assignment = resolveBed(room, worker, property,
-                stay.getDateFrom(), stay.getDateTo(), request.bedId(), stay.getId());
+        var assignment = resolveBedKeepingCurrent(stay, room, worker, property,
+                stay.getDateFrom(), stay.getDateTo(), request.bedId(), request.roomId());
         var ctx = new ConstraintContext(worker, room, property,
                 stay.getDateFrom(), stay.getDateTo(), stay.getId(), assignment.bed());
         runConstraints(ctx, request.overrideReason());
+
+        // Snapshot before any mutation. Taken after the room and bed were already written, the
+        // audit event showed previousState.roomId == newState.roomId and the planned room became
+        // unrecoverable -- exactly what an auditor is pointed at the trail to find out.
+        var previous = snapshot(stay);
 
         if (request.roomId() != null) {
             stay.setRoomId(request.roomId());
         }
         stay.setBedId(assignment.bed().getId());
         stay.setBedAutoAssigned(assignment.autoAssigned());
-        var previous = snapshot(stay);
         stay.setStatus(StayStatus.CHECKED_IN);
         stay.setConfirmedByUserId(currentUserId());
         stay = stayRepository.save(stay);
@@ -211,7 +218,7 @@ public class StayService {
             throw new ConflictException("error.stay.cannot_move_in_current_status");
         }
 
-        var targetRoom = getRoomOrThrow(request.targetRoomId(), agencyId);
+        var targetRoom = getRoomInPropertyOrThrow(request.targetRoomId(), stay.getPropertyId(), agencyId);
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
         var today = LocalDate.now();
@@ -225,8 +232,12 @@ public class StayService {
             throw new ConflictException("error.stay.cannot_move_on_last_day");
         }
 
+        // Auto-assign must not hand back the bed the worker is already in. resolveBed excludes
+        // this stay from the occupancy counts, so the current bed looks free and -- sorted by
+        // label -- is usually the first candidate; a same-room move with no explicit target was
+        // therefore refused as "same bed" even with the rest of the room empty.
         var assignment = resolveBed(targetRoom, worker, property,
-                today, originalDateTo, request.targetBedId(), stay.getId());
+                today, originalDateTo, request.targetBedId(), stay.getId(), stay.getBedId());
         if (stay.getBedId().equals(assignment.bed().getId())) {
             throw new ConflictException("error.stay.move_same_room");
         }
@@ -302,6 +313,22 @@ public class StayService {
                 AuditAction.CANCELLED, previous, snapshot(stay), null);
     }
 
+    /**
+     * Per-item results, one transaction.
+     *
+     * <p>Only business failures are reported per item, and only business failures leave the other
+     * items intact. That is a deliberate contract, not an omission. Anything else -- a database
+     * rejecting a write -- puts the Hibernate session in a state where no later item can be
+     * persisted either, so it is rethrown and the whole batch rolls back with the proper error
+     * envelope for the cause.
+     *
+     * <p>What this replaces: every failure was swallowed into a per-item "error" entry, but the
+     * transaction had already been marked rollback-only, so the caller received a 500 and a result
+     * list describing creations that never happened. It also blamed the wrong item. Entities use
+     * GenerationType.UUID, so save() alone does not reach the database; the INSERT ran on the next
+     * item's auto-flush, and that item was recorded as the failure. saveAndFlush pins each INSERT
+     * inside the try block that owns it.
+     */
     @Transactional
     public BulkAssignResult bulkAssign(BulkAssignRequest request) {
         var agencyId = TenantContext.requireAgencyId();
@@ -314,9 +341,9 @@ public class StayService {
             var a = request.assignments().get(i);
             try {
                 var worker = getWorkerOrThrow(a.workerId(), agencyId);
-                var room = getRoomOrThrow(a.roomId(), agencyId);
                 var property = getPropertyOrThrow(a.propertyId(), agencyId);
-                var assignment = resolveBed(room, worker, property, a.dateFrom(), a.dateTo(), a.bedId(), null);
+                var room = getRoomInPropertyOrThrow(a.roomId(), a.propertyId(), agencyId);
+                var assignment = resolveBed(room, worker, property, a.dateFrom(), a.dateTo(), a.bedId(), null, null);
                 var ctx = new ConstraintContext(worker, room, property, a.dateFrom(), a.dateTo(), null, assignment.bed());
                 runConstraints(ctx, a.overrideReason());
 
@@ -331,13 +358,16 @@ public class StayService {
                 stay.setDateTo(a.dateTo());
                 stay.setOverrideReason(a.overrideReason());
                 stay.setStatus(StayStatus.PLANNED);
-                stay = stayRepository.save(stay);
+                stay = stayRepository.saveAndFlush(stay);
                 auditService.log(agencyId, actorId, AuditEntityType.STAY, stay.getId(),
                         AuditAction.BULK_ASSIGNED, null, snapshot(stay), a.overrideReason());
                 results.add(new AssignmentResult(i, a.workerId(), stay.getId(), stay.getBedId(), "created", null));
                 created++;
-            } catch (Exception e) {
-                results.add(new AssignmentResult(i, a.workerId(), null, null, "error", e.getMessage()));
+            } catch (BusinessException e) {
+                // A message code, never e.getMessage(): that leaked raw SQL text for non-business
+                // failures and was null for an NPE.
+                log.warn("Bulk assign item {} rejected: {}", i, e.getMessageCode());
+                results.add(new AssignmentResult(i, a.workerId(), null, null, "error", e.getMessageCode()));
                 errors++;
             }
         }
@@ -363,13 +393,15 @@ public class StayService {
                 }
                 var previous = snapshot(stay);
                 stay.setStatus(StayStatus.CHECKED_OUT);
-                stayRepository.save(stay);
+                stayRepository.saveAndFlush(stay);
                 auditService.log(agencyId, actorId, AuditEntityType.STAY, stayId,
                         AuditAction.BULK_CHECKED_OUT, previous, snapshot(stay), null);
                 results.add(new CheckoutResult(stayId, "checked_out", null));
                 checkedOut++;
-            } catch (Exception e) {
-                results.add(new CheckoutResult(stayId, "error", e.getMessage()));
+            } catch (BusinessException e) {
+                // See bulkAssign: business failures only, message codes only.
+                log.warn("Bulk checkout of {} rejected: {}", stayId, e.getMessageCode());
+                results.add(new CheckoutResult(stayId, "error", e.getMessageCode()));
                 errors++;
             }
         }
@@ -421,7 +453,7 @@ public class StayService {
      */
     private BedAssignment resolveBed(Room room, Worker worker, Property property,
                                       LocalDate dateFrom, LocalDate dateTo,
-                                      UUID requestedBedId, UUID excludeStayId) {
+                                      UUID requestedBedId, UUID excludeStayId, UUID excludeBedId) {
         if (requestedBedId != null) {
             var bed = bedRepository.findByIdAndAgencyIdAndRoomId(requestedBedId, room.getAgencyId(), room.getId())
                     .orElseThrow(() -> new ValidationException("error.bed.not_in_room"));
@@ -430,6 +462,7 @@ public class StayService {
 
         var candidates = bedRepository.findAllByAgencyIdAndRoomId(room.getAgencyId(), room.getId()).stream()
                 .filter(bed -> bed.getStatus() == BedStatus.ACTIVE)
+                .filter(bed -> excludeBedId == null || !bed.getId().equals(excludeBedId))
                 .sorted(Comparator.comparing(Bed::getLabel))
                 .toList();
 
@@ -453,6 +486,30 @@ public class StayService {
         throw new ConstraintViolationException("error.constraint.violated", toViolationDetails(firstCandidateViolations));
     }
 
+    /**
+     * Bed for a write path that is not necessarily moving the worker. An explicit bedId always
+     * wins. Otherwise, when the room is unchanged, the stay keeps the bed it already has --
+     * including its bedAutoAssigned flag.
+     *
+     * <p>Re-running the auto-assign loop here was wrong: it excludes this stay from the occupancy
+     * counts, so it returns the lowest-labelled free bed in the room, not the bed the planner
+     * chose. A front-desk check-in with the documented minimal body {@code {}} silently moved the
+     * worker to a different bed than the printed arrivals sheet said, and a notes-only PUT did
+     * the same.
+     */
+    private BedAssignment resolveBedKeepingCurrent(Stay stay, Room room, Worker worker, Property property,
+                                                    LocalDate dateFrom, LocalDate dateTo,
+                                                    UUID requestedBedId, UUID requestedRoomId) {
+        var roomUnchanged = requestedRoomId == null || requestedRoomId.equals(stay.getRoomId());
+        if (requestedBedId == null && roomUnchanged && stay.getBedId() != null) {
+            var bed = bedRepository
+                    .findByIdAndAgencyIdAndRoomId(stay.getBedId(), room.getAgencyId(), room.getId())
+                    .orElseThrow(() -> new ValidationException("error.bed.not_in_room"));
+            return new BedAssignment(bed, stay.isBedAutoAssigned());
+        }
+        return resolveBed(room, worker, property, dateFrom, dateTo, requestedBedId, stay.getId(), null);
+    }
+
     private UUID currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
@@ -474,6 +531,18 @@ public class StayService {
 
     private Room getRoomOrThrow(UUID roomId, UUID agencyId) {
         return roomRepository.findByIdAndAgencyId(roomId, agencyId)
+                .orElseThrow(() -> new NotFoundException("error.room.not_found"));
+    }
+
+    /**
+     * Room lookup for write paths, which must also prove the room belongs to the stay's property.
+     * A stay whose room sits in a different property than its propertyId is invisible everywhere:
+     * the occupancy, inspection and exception views for the stay's property fetch it and then drop
+     * it because they have no matching room, and the views for the room's property never fetch it
+     * at all. The worker is checked in and appears nowhere.
+     */
+    private Room getRoomInPropertyOrThrow(UUID roomId, UUID propertyId, UUID agencyId) {
+        return roomRepository.findByIdAndAgencyIdAndPropertyId(roomId, agencyId, propertyId)
                 .orElseThrow(() -> new NotFoundException("error.room.not_found"));
     }
 

@@ -21,6 +21,7 @@ public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
             SELECT e FROM AuditEvent e
             WHERE e.agencyId = :agencyId
               AND (CAST(:entityType AS STRING) IS NULL OR e.entityType = :entityType)
+              AND (CAST(:excludeEntityType AS STRING) IS NULL OR e.entityType <> :excludeEntityType)
               AND (CAST(:entityId AS java.util.UUID) IS NULL OR e.entityId = :entityId)
               AND (CAST(:actorUserId AS java.util.UUID) IS NULL OR e.actorUserId = :actorUserId)
               AND (CAST(:dateFrom AS java.time.Instant) IS NULL OR e.createdAt >= :dateFrom)
@@ -29,6 +30,7 @@ public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
     Page<AuditEvent> findAllWithFilters(
             @Param("agencyId") UUID agencyId,
             @Param("entityType") AuditEntityType entityType,
+            @Param("excludeEntityType") AuditEntityType excludeEntityType,
             @Param("entityId") UUID entityId,
             @Param("actorUserId") UUID actorUserId,
             @Param("dateFrom") Instant dateFrom,

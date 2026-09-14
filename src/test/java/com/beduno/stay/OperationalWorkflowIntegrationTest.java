@@ -72,6 +72,67 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().status()).isEqualTo(StayStatus.CHECKED_IN);
         }
 
+        /**
+         * The planner's explicit choice must survive a minimal check-in. resolveBed excludes this
+         * stay from the occupancy counts, so re-running auto-assign returned the lowest-labelled
+         * free bed -- typically not the bed on the printed arrivals sheet.
+         */
+        @Test
+        void shouldKeepPlannedBed_whenCheckInHasNoBedOverride() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var beds = listBeds(property.id(), room.id()).stream()
+                    .sorted(java.util.Comparator.comparing(BedResponse::label)).toList();
+            var chosen = beds.get(3);
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), chosen.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            var stay = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            ).getBody();
+            assertThat(stay.bedId()).isEqualTo(chosen.id());
+            assertThat(stay.bedAutoAssigned()).isFalse();
+            forceExpectedToday(stay.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().bedId()).isEqualTo(chosen.id());
+            assertThat(response.getBody().bedAutoAssigned()).isFalse();
+        }
+
+        @Test
+        void shouldRejectCheckIn_whenRoomBelongsToAnotherProperty() {
+            // A stay whose room sits outside its property is invisible in every occupancy view:
+            // the property's views drop it for want of a matching room, the room's property never
+            // fetches it. The worker is checked in and appears nowhere.
+            var worker = createWorker();
+            var property = createProperty();
+            var otherProperty = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var foreignRoom = createRoom(otherProperty.id(), 4, 0);
+
+            var stay = createPlannedStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7));
+            forceExpectedToday(stay.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(foreignRoom.id(), null, null),
+                            authHeaders(Role.PROPERTY_ADMIN)),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).contains("error.room.not_found");
+        }
+
         @Test
         void shouldCheckIn_withRoomOverride() {
             var worker = createWorker();
@@ -339,6 +400,67 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().roomId()).isEqualTo(room.id());
             assertThat(response.getBody().bedId()).isEqualTo(otherBed.id());
+        }
+
+        /**
+         * Same-room move with no explicit target. resolveBed excludes this stay, so the worker's
+         * own bed looked free and -- first by label -- was returned, which the equality check then
+         * rejected as "same bed" even with the rest of the room empty.
+         */
+        @Test
+        void shouldMoveToNextFreeBed_whenSameRoomAutoAssign() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().roomId()).isEqualTo(room.id());
+            assertThat(response.getBody().bedId()).isNotEqualTo(stay.bedId());
+        }
+
+        @Test
+        void shouldRejectMove_whenSameRoomAutoAssignAndNoOtherBedFree() {
+            // A one-bed room has nowhere to move to, so the same-bed refusal still stands.
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 1, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        void shouldRejectMove_whenTargetRoomBelongsToAnotherProperty() {
+            var worker = createWorker();
+            var property = createProperty();
+            var otherProperty = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var foreignRoom = createRoom(otherProperty.id(), 4, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(foreignRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
 
         @Test
