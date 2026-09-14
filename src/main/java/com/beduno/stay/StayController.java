@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class StayController {
 
     private final StayService stayService;
+    private final Clock clock;
 
     @Operation(summary = "List stays", description = "Paginated list filterable by worker, property, status, and date range")
     @GetMapping
@@ -71,7 +73,7 @@ public class StayController {
     public ResponseEntity<List<StayResponse>> getArrivals(
             @RequestParam UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(stayService.getArrivals(propertyId, date != null ? date : LocalDate.now()));
+        return ResponseEntity.ok(stayService.getArrivals(propertyId, date != null ? date : LocalDate.now(clock)));
     }
 
     @Operation(summary = "Check in", description = "Transitions an expected_today stay to checked_in. Runs constraint engine. Optionally overrides room.")

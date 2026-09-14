@@ -727,13 +727,20 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var room = createRoom(property.id(), 4, 0);
             var altRoom = createRoom(property.id(), 4, 0);
 
-            // 1. Create planned stay
+            // 1. Create a stay arriving tomorrow: not due yet, so still PLANNED
             var stay = createPlannedStay(worker.id(), property.id(), room.id(),
-                    LocalDate.now(), LocalDate.now().plusDays(7));
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(7));
             assertThat(stay.status()).isEqualTo(StayStatus.PLANNED);
 
-            // 2. Scheduler transition (manual trigger)
-            forceExpectedToday(stay.id());
+            // 2. Bring the arrival forward to today. A due stay is promoted on the spot rather
+            // than waiting for the next sweep -- otherwise a stay planned for today after the
+            // 06:00 run could never be checked in, since PLANNED has no path to CHECKED_IN.
+            var broughtForward = new com.beduno.stay.dto.UpdateStayRequest(
+                    room.id(), null, LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(broughtForward, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
             var afterTransition = getStay(stay.id());
             assertThat(afterTransition.status()).isEqualTo(StayStatus.EXPECTED_TODAY);
 

@@ -315,6 +315,53 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().dateFrom()).isEqualTo(newDateFrom);
         }
 
+        /**
+         * EXPECTED_TODAY is only meaningful while dateFrom is today or earlier. Postponing an
+         * arrival used to leave the status untouched, so the stay could still be checked in today
+         * and appeared as a phantom arrival for the whole intervening week.
+         */
+        @Test
+        void shouldRevertToPlanned_whenExpectedTodayStayIsPostponed() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var stay = createStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null);
+            assertThat(stay.status()).isEqualTo(StayStatus.EXPECTED_TODAY);
+
+            var request = new UpdateStayRequest(room.id(), null,
+                    LocalDate.now().plusDays(7), LocalDate.now().plusDays(14), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().status()).isEqualTo(StayStatus.PLANNED);
+        }
+
+        @Test
+        void shouldPromoteToExpectedToday_whenPlannedStayIsBroughtForwardToToday() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var stay = createStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now().plusDays(10), LocalDate.now().plusDays(17), null);
+            assertThat(stay.status()).isEqualTo(StayStatus.PLANNED);
+
+            var request = new UpdateStayRequest(room.id(), null,
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().status()).isEqualTo(StayStatus.EXPECTED_TODAY);
+        }
+
         @Test
         void shouldRejectUpdate_whenTargetBedOccupied() {
             var worker1 = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);

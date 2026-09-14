@@ -99,8 +99,17 @@ public interface StayRepository extends JpaRepository<Stay, UUID> {
             @Param("excludeId") UUID excludeId
     );
 
-    @Query("SELECT s FROM Stay s WHERE s.status = com.beduno.stay.StayStatus.PLANNED AND s.dateFrom = :date")
-    List<Stay> findPlannedArrivingOn(@Param("date") LocalDate date);
+    /**
+     * Deliberately cross-tenant: it backs the sweep that promotes PLANNED stays to EXPECTED_TODAY
+     * for every agency at once, and runs on a scheduler thread that has no TenantContext.
+     *
+     * <p>{@code <=}, not {@code =}. Matching the date exactly meant a stay whose arrival date
+     * passed while the instance was stopped -- or one planned for today after 06:00 -- was never
+     * promoted, and since PLANNED cannot transition to CHECKED_IN it could never be checked in at
+     * all. The sweep is idempotent, so catching up costs nothing when there is nothing to catch.
+     */
+    @Query("SELECT s FROM Stay s WHERE s.status = com.beduno.stay.StayStatus.PLANNED AND s.dateFrom <= :date")
+    List<Stay> findPlannedArrivingOnOrBefore(@Param("date") LocalDate date);
 
     @Query("""
             SELECT s FROM Stay s

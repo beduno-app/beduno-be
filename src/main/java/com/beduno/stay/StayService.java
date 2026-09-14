@@ -46,6 +46,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -77,6 +78,7 @@ public class StayService {
     private final ConstraintEngine constraintEngine;
     private final StayMapper stayMapper;
     private final AuditService auditService;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public PageResponse<StayResponse> findAll(
@@ -113,7 +115,7 @@ public class StayService {
         stay.setAgencyId(agencyId);
         stay.setBedId(assignment.bed().getId());
         stay.setBedAutoAssigned(assignment.autoAssigned());
-        stay.setStatus(StayStatus.PLANNED);
+        stay.setStatus(arrivalStatusFor(request.dateFrom()));
         stay = stayRepository.save(stay);
         auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CREATED, null, snapshot(stay), request.overrideReason());
@@ -143,6 +145,11 @@ public class StayService {
         stayMapper.updateEntity(request, stay);
         stay.setBedId(assignment.bed().getId());
         stay.setBedAutoAssigned(assignment.autoAssigned());
+        // Reconcile the status with the new arrival date, in both directions. EXPECTED_TODAY only
+        // means anything while dateFrom is today or past: an arrival postponed by a week used to
+        // stay EXPECTED_TODAY, so it could still be checked in today and showed up as a phantom
+        // arrival for the whole intervening week.
+        stay.setStatus(arrivalStatusFor(stay.getDateFrom()));
         stay = stayRepository.save(stay);
         auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.UPDATED, previous, snapshot(stay), request.overrideReason());
@@ -221,7 +228,7 @@ public class StayService {
         var targetRoom = getRoomInPropertyOrThrow(request.targetRoomId(), stay.getPropertyId(), agencyId);
         var worker = getWorkerOrThrow(stay.getWorkerId(), agencyId);
         var property = getPropertyOrThrow(stay.getPropertyId(), agencyId);
-        var today = LocalDate.now();
+        var today = LocalDate.now(clock);
 
         var originalDateTo = stay.getDateTo();
 
@@ -292,10 +299,23 @@ public class StayService {
         return stayMapper.toResponse(stay);
     }
 
+    /**
+     * Promotes every due PLANNED stay across all agencies. Runs without a TenantContext, from the
+     * scheduler and once at start-up, so it passes each stay's own agencyId to the audit log and
+     * records no actor -- the change has no human author.
+     */
     @Transactional
     public int transitionPlannedToExpectedToday(LocalDate date) {
-        var stays = stayRepository.findPlannedArrivingOn(date);
-        stays.forEach(s -> s.setStatus(StayStatus.EXPECTED_TODAY));
+        var stays = stayRepository.findPlannedArrivingOnOrBefore(date);
+        for (var stay : stays) {
+            var previous = snapshot(stay);
+            stay.setStatus(StayStatus.EXPECTED_TODAY);
+            // Every other status change on a stay is audited and the trail is documented as
+            // covering all of them. Without this the next event on the stay showed a previous
+            // status of EXPECTED_TODAY with nothing recording when it left PLANNED.
+            auditService.log(stay.getAgencyId(), null, AuditEntityType.STAY, stay.getId(),
+                    AuditAction.UPDATED, previous, snapshot(stay), "scheduler");
+        }
         stayRepository.saveAll(stays);
         return stays.size();
     }
@@ -357,7 +377,7 @@ public class StayService {
                 stay.setDateFrom(a.dateFrom());
                 stay.setDateTo(a.dateTo());
                 stay.setOverrideReason(a.overrideReason());
-                stay.setStatus(StayStatus.PLANNED);
+                stay.setStatus(arrivalStatusFor(a.dateFrom()));
                 stay = stayRepository.saveAndFlush(stay);
                 auditService.log(agencyId, actorId, AuditEntityType.STAY, stay.getId(),
                         AuditAction.BULK_ASSIGNED, null, snapshot(stay), a.overrideReason());
@@ -508,6 +528,19 @@ public class StayService {
             return new BedAssignment(bed, stay.isBedAutoAssigned());
         }
         return resolveBed(room, worker, property, dateFrom, dateTo, requestedBedId, stay.getId(), null);
+    }
+
+    /**
+     * The status a stay should carry given its arrival date.
+     *
+     * <p>PLANNED has no transition to CHECKED_IN, and for a long time the only way out of it was a
+     * once-a-day sweep keyed on {@code dateFrom = today}. A stay created at 10:00 for a worker
+     * arriving tonight was therefore never checkable in -- {@code POST /check-in} returned 409
+     * forever and a direct database update was the only workaround. Deciding the status here, and
+     * again on every update, closes that without loosening the transition table.
+     */
+    private StayStatus arrivalStatusFor(LocalDate dateFrom) {
+        return dateFrom.isAfter(LocalDate.now(clock)) ? StayStatus.PLANNED : StayStatus.EXPECTED_TODAY;
     }
 
     private UUID currentUserId() {

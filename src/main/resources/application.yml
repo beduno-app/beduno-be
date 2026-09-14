@@ -50,6 +50,11 @@ beduno:
   # on by default; see application-dev.yml.
   seed:
     enabled: ${BEDUNO_SEED_ENABLED:false}
+  # The zone every date-boundary decision is taken in: which stays arrive "today", who occupies a
+  # bed "today", and when the nightly sweep fires. The container has no TZ set, so without this
+  # the JVM default is UTC and the business day is wrong for the first hour or two after midnight.
+  # Timestamps are unaffected -- those are instants and stay in UTC.
+  time-zone: ${BEDUNO_TIME_ZONE:Europe/Warsaw}
   scheduler:
     arrival-transition-cron: "0 0 6 * * *"
   jwt:

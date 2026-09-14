@@ -2,6 +2,7 @@ package com.beduno.room;
 
 import java.util.stream.Collectors;
 import java.util.List;
+import java.time.Clock;
 import java.time.LocalDate;
 import com.beduno.bed.Bed;
 import com.beduno.bed.BedRepository;
@@ -59,6 +60,7 @@ public class RoomService {
     private final StayRepository stayRepository;
     private final WorkerRepository workerRepository;
     private final BedRepository bedRepository;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> findAllByPropertyId(UUID propertyId, Pageable pageable) {
@@ -159,7 +161,7 @@ public class RoomService {
      */
     private Map<UUID, List<RoomOccupant>> occupantsByRoom(UUID agencyId, UUID propertyId) {
         var stays = stayRepository.findActiveStaysForPropertyOnDate(
-                agencyId, propertyId, LocalDate.now(), OCCUPYING_STATUSES);
+                agencyId, propertyId, LocalDate.now(clock), OCCUPYING_STATUSES);
         if (stays.isEmpty()) {
             return Map.of();
         }

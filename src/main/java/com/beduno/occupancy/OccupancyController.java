@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +35,7 @@ public class OccupancyController {
 
     private final OccupancyService occupancyService;
     private final ExportService exportService;
+    private final Clock clock;
 
     @Operation(summary = "Room occupancy", description = "Returns room-by-room list of current occupants for a property on a given date")
     @GetMapping("/occupancy")
@@ -41,7 +43,7 @@ public class OccupancyController {
     public ResponseEntity<List<RoomOccupancyResponse>> getOccupancy(
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(occupancyService.getOccupancy(propertyId, date != null ? date : LocalDate.now()));
+        return ResponseEntity.ok(occupancyService.getOccupancy(propertyId, date != null ? date : LocalDate.now(clock)));
     }
 
     @Operation(summary = "Occupancy exceptions", description = "Returns over-capacity rooms and unassigned stays for a property on a given date")
@@ -50,7 +52,7 @@ public class OccupancyController {
     public ResponseEntity<List<OccupancyExceptionResponse>> getExceptions(
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(occupancyService.getExceptions(propertyId, date != null ? date : LocalDate.now()));
+        return ResponseEntity.ok(occupancyService.getExceptions(propertyId, date != null ? date : LocalDate.now(clock)));
     }
 
     @Operation(summary = "Inspection roster", description = "Room-by-room roster for nightly inspection")
@@ -59,7 +61,7 @@ public class OccupancyController {
     public ResponseEntity<List<InspectionRoomEntry>> getInspectionRoster(
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
-        return ResponseEntity.ok(occupancyService.getInspectionRoster(propertyId, date != null ? date : LocalDate.now()));
+        return ResponseEntity.ok(occupancyService.getInspectionRoster(propertyId, date != null ? date : LocalDate.now(clock)));
     }
 
     @Operation(summary = "Submit inspection report", description = "Reports discrepancies: expected workers not present, unexpected workers present")
@@ -70,7 +72,7 @@ public class OccupancyController {
             @RequestParam(required = false) LocalDate date,
             @Valid @RequestBody InspectionReportRequest request) {
         return ResponseEntity.ok(occupancyService.submitInspectionReport(
-                propertyId, date != null ? date : LocalDate.now(), request));
+                propertyId, date != null ? date : LocalDate.now(clock), request));
     }
 
     @Operation(summary = "Export occupancy CSV", description = "Downloads nightly occupancy list as CSV. Supports language parameter (EN, PL, DE, RU, UA).")
@@ -80,7 +82,7 @@ public class OccupancyController {
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false, defaultValue = "EN") String language) {
-        var csv = exportService.exportOccupancy(propertyId, date != null ? date : LocalDate.now(), language);
+        var csv = exportService.exportOccupancy(propertyId, date != null ? date : LocalDate.now(clock), language);
         return csvResponse(csv, "occupancy");
     }
 
@@ -91,7 +93,7 @@ public class OccupancyController {
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false, defaultValue = "EN") String language) {
-        var csv = exportService.exportArrivals(propertyId, date != null ? date : LocalDate.now(), language);
+        var csv = exportService.exportArrivals(propertyId, date != null ? date : LocalDate.now(clock), language);
         return csvResponse(csv, "arrivals");
     }
 
@@ -102,7 +104,7 @@ public class OccupancyController {
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false, defaultValue = "EN") String language) {
-        var csv = exportService.exportExceptions(propertyId, date != null ? date : LocalDate.now(), language);
+        var csv = exportService.exportExceptions(propertyId, date != null ? date : LocalDate.now(clock), language);
         return csvResponse(csv, "exceptions");
     }
 
@@ -111,7 +113,7 @@ public class OccupancyController {
         var headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType("text/csv;charset=UTF-8"));
         headers.setContentDisposition(ContentDisposition.attachment()
-                .filename(filePrefix + "_" + LocalDate.now() + ".csv").build());
+                .filename(filePrefix + "_" + LocalDate.now(clock) + ".csv").build());
         return ResponseEntity.ok().headers(headers).body(bytes);
     }
 }

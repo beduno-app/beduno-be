@@ -61,6 +61,11 @@ services:
       # idempotency check is scoped to its own demo admin account, not to the database being
       # empty, so this is safe to leave enabled indefinitely. See SeedRunner.
       BEDUNO_SEED_ENABLED: ${BEDUNO_SEED_ENABLED:-false}
+      # The zone every date-boundary decision is taken in: which stays arrive "today", who is in
+      # a bed "today", and when the nightly sweep fires. The container has no TZ, so without this
+      # the JVM runs in UTC and the business day is wrong for the first hour or two after
+      # midnight. Timestamps are unaffected; those are instants and stay in UTC.
+      BEDUNO_TIME_ZONE: ${BEDUNO_TIME_ZONE:-Europe/Warsaw}
     mem_limit: 1024m
     # application-prod.yml sets `shutdown: graceful` with a 25s per-phase timeout so a container
     # stop does not sever in-flight requests. Compose's default grace period is 10s, so that

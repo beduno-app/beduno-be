@@ -33,6 +33,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,7 @@ public class SeedRunner implements ApplicationRunner {
     private final StayRepository stayRepository;
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -143,7 +145,7 @@ public class SeedRunner implements ApplicationRunner {
         var irynaMelnyk = createWorker(agencyId, actorId, "W-DEMO-008", "Iryna", "Melnyk",
                 Gender.FEMALE, "UA", List.of("cook"), WorkerStatus.ACTIVE);
 
-        var today = LocalDate.now();
+        var today = LocalDate.now(clock);
 
         createStay(agencyId, actorId, janKowalski.getId(), sunrise.getId(), room101.getId(), bed101a.getId(),
                 today.minusDays(2), today.plusDays(5), StayStatus.CHECKED_IN, actorId, null);
