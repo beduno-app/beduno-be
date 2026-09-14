@@ -22,6 +22,8 @@ Runs inside GitHub Actions via `claude-code-action` on a pull request. Reviews t
 
 **This skill does not interact and does not edit code.** No questions, no source edits, no commits. It reads the diff, analyzes it, posts inline review comments and one summary comment. That's the whole job. It **never** fails the workflow — this check is advisory only.
 
+**Always post a fresh summary comment at the end of every run — Step 5 is not optional.** Do not skip posting because the findings look the same as a prior comment already on the PR, or because you conclude "nothing changed since the last review." Every run is a fresh instance of this skill with no memory of its own prior runs; whether posting is warranted was already decided by the workflow triggering this run at all (on a real diff against the base branch), not by comparing against what's currently on the PR. Treat "the PR looks clean" as a finding to report (0 findings, brief explanation), not a reason to stay silent.
+
 ## Operating context
 
 Running non-interactively on an ephemeral Linux runner with:
