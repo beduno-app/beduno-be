@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "Audit", description = "Immutable audit trail of all changes")
@@ -47,5 +48,12 @@ public class AuditController {
     @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER')")
     public ResponseEntity<AuditEventResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(auditService.findById(id));
+    }
+
+    @Operation(summary = "Recent events for an entity", description = "Last 5 audit events for an entity, newest first")
+    @GetMapping("/recent")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER')")
+    public ResponseEntity<List<AuditEventResponse>> findRecentForEntity(@RequestParam UUID entityId) {
+        return ResponseEntity.ok(auditService.findRecentForEntity(entityId));
     }
 }

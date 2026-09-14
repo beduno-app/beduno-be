@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -73,6 +74,17 @@ public class AuditService {
                 .filter(event -> event.getEntityType() != hiddenEntityType())
                 .map(auditMapper::toResponse)
                 .orElseThrow(() -> new NotFoundException("error.audit.not_found"));
+    }
+
+    /**
+     * A quick "what just happened to this entity" widget for the entity's detail page -- the last
+     * 5 events, newest first, without the filter/pagination overhead of {@link #findAll}.
+     */
+    @Transactional(readOnly = true)
+    public List<AuditEventResponse> findRecentForEntity(UUID entityId) {
+        return auditRepository.findTop5ByEntityIdOrderByCreatedAtDesc(entityId).stream()
+                .map(auditMapper::toResponse)
+                .toList();
     }
 
     /**
