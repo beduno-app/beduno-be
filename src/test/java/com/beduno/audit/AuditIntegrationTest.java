@@ -235,6 +235,52 @@ class AuditIntegrationTest extends IntegrationTestBase {
 
             assertThat(otherAgencyView).extracting(AuditEventResponse::entityId).doesNotContain(stay.id());
         }
+
+        @Test
+        void shouldReturnRecentEvents_whenEntityHasSomeInThisAgency() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + stay.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).extracting(AuditEventResponse::entityId).containsOnly(stay.id());
+        }
+
+        @Test
+        void shouldNotReturnRecentEvents_whenEntityBelongsToOtherAgency() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + stay.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isEmpty();
+        }
+
+        @Test
+        void shouldNotReturnRecentUserEvents_whenCallerIsPlanner() {
+            var created = createUser();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + created.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_PLANNER)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isEmpty();
+        }
     }
 
     private List<AuditEventResponse> auditFor(AuditEntityType entityType, UUID entityId) {

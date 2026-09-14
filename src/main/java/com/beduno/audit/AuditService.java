@@ -82,7 +82,10 @@ public class AuditService {
      */
     @Transactional(readOnly = true)
     public List<AuditEventResponse> findRecentForEntity(UUID entityId) {
-        return auditRepository.findTop5ByEntityIdOrderByCreatedAtDesc(entityId).stream()
+        var agencyId = TenantContext.requireAgencyId();
+        var hidden = hiddenEntityType();
+        return auditRepository.findTop5ByAgencyIdAndEntityIdOrderByCreatedAtDesc(agencyId, entityId).stream()
+                .filter(event -> event.getEntityType() != hidden)
                 .map(auditMapper::toResponse)
                 .toList();
     }

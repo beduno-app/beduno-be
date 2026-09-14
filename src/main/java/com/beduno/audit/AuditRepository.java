@@ -15,7 +15,7 @@ public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
 
     Optional<AuditEvent> findByIdAndAgencyId(UUID id, UUID agencyId);
 
-    List<AuditEvent> findTop5ByEntityIdOrderByCreatedAtDesc(UUID entityId);
+    List<AuditEvent> findTop5ByAgencyIdAndEntityIdOrderByCreatedAtDesc(UUID agencyId, UUID entityId);
 
     /**
      * Deliberately unordered. A Pageable's sort is appended as its own {@code order by}, so a
