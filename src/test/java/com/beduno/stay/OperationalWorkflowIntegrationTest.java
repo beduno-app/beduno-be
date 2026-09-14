@@ -648,6 +648,11 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         /**
          * The room-level headcount check cannot see this: two workers on one bed of a two-bed room
          * keeps the count within capacity. It is exactly the shape of the V12 backfill defect.
+         *
+         * <p>V15's exclusion constraint now prevents this state from being created, so the conflict
+         * has to be seeded with the constraint lifted -- which is precisely the population this
+         * report exists for: rows that predate the guard. New conflicts are the constraint's job;
+         * finding the old ones is this report's.
          */
         @Test
         void shouldReturnException_whenTwoWorkersCheckedInOnSameBed() {
@@ -657,17 +662,23 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var room = createRoom(property.id(), 2, 0);
             var first = checkedInStay(worker1.id(), property.id(), room.id());
             var second = checkedInStay(worker2.id(), property.id(), room.id());
-            // Force the conflict the engine would refuse, the way corrupted data would look.
-            jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", first.bedId(), second.id());
 
-            var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
-                    .filter(e -> e.roomId().equals(room.id())).toList();
+            withoutBedExclusionConstraint(() -> {
+                jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", first.bedId(), second.id());
 
-            assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType).contains("BED_CONFLICT");
-            var conflict = exceptions.stream()
-                    .filter(e -> e.exceptionType().equals("BED_CONFLICT")).findFirst().orElseThrow();
-            assertThat(conflict.occupants()).extracting(OccupantSummary::workerId)
-                    .containsExactlyInAnyOrder(worker1.id(), worker2.id());
+                var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
+                        .filter(e -> e.roomId().equals(room.id())).toList();
+
+                assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType)
+                        .contains("BED_CONFLICT");
+                var conflict = exceptions.stream()
+                        .filter(e -> e.exceptionType().equals("BED_CONFLICT")).findFirst().orElseThrow();
+                assertThat(conflict.occupants()).extracting(OccupantSummary::workerId)
+                        .containsExactlyInAnyOrder(worker1.id(), worker2.id());
+
+                // Undo the conflict so the guard can be put back.
+                jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", second.bedId(), second.id());
+            });
         }
 
         @Test
@@ -1022,6 +1033,24 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
                 new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
                 new ParameterizedTypeReference<List<StayResponse>>() {}
         ).getBody();
+    }
+
+    /**
+     * Runs a seed step with the bed-overlap exclusion constraint lifted, to create the kind of
+     * conflicting row that exists only in data written before V15 added the guard. Restored in a
+     * finally block so a failure here cannot leave the shared test database unguarded.
+     */
+    private void withoutBedExclusionConstraint(Runnable seed) {
+        jdbcTemplate.execute("ALTER TABLE stays DROP CONSTRAINT excl_stays_bed_period");
+        try {
+            seed.run();
+        } finally {
+            jdbcTemplate.execute("""
+                    ALTER TABLE stays ADD CONSTRAINT excl_stays_bed_period
+                    EXCLUDE USING gist (bed_id WITH =, daterange(date_from, date_to, '[)') WITH &&)
+                    WHERE (status IN ('PLANNED', 'EXPECTED_TODAY', 'CHECKED_IN'))
+                    """);
+        }
     }
 
     private List<OccupancyExceptionResponse> getExceptions(UUID propertyId, LocalDate date) {

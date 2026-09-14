@@ -18,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Proves V12__backfill_beds.sql's real backfill logic against populated data, using the real
@@ -113,7 +114,9 @@ class BedBackfillMigrationTest {
                     LocalDate.of(2026, 1, 15), LocalDate.of(2026, 1, 20), "PLANNED", 2);
         }
 
-        migrations.migrateToLatest();
+        // Stops at V14: V15 adds the exclusion constraints and deliberately refuses to install
+        // them over data that already violates them, which is what the next test asserts.
+        migrations.migrateTo("14");
 
         try (var connection = connect()) {
             // V12's bed assignment is row_number() OVER (PARTITION BY room_id ORDER BY
@@ -129,6 +132,44 @@ class BedBackfillMigrationTest {
                     .as("documents the known, intentionally-unfixed V12 backfill gap -- see class Javadoc")
                     .isGreaterThan(0);
         }
+    }
+
+    /**
+     * V15 installs the exclusion constraints that stop two stays claiming one bed. Over data that
+     * already violates them -- which is exactly what the V12 backfill can leave behind -- it fails
+     * the migration with a message naming the counts, rather than either silently skipping the
+     * guard or dying inside PostgreSQL's constraint builder with no indication of what to do.
+     *
+     * <p>That makes a deploy onto affected data an explicit, blocking decision: the conflicting
+     * rows have to be resolved first, and GET /properties/{id}/exceptions now reports them as
+     * BED_CONFLICT. Repairing them automatically is a data decision, not a migration's to take.
+     */
+    @Test
+    void shouldRefuseOverlapConstraints_whenHistoricalDataAlreadyConflicts() throws Exception {
+        migrations.migrateTo("11");
+
+        var agencyId = UUID.randomUUID();
+        var workerId = UUID.randomUUID();
+        var propertyId = UUID.randomUUID();
+        var roomId = UUID.randomUUID();
+
+        try (var connection = connect()) {
+            seedAgency(connection, agencyId);
+            seedWorker(connection, agencyId, workerId);
+            seedProperty(connection, agencyId, propertyId);
+            seedRoom(connection, agencyId, propertyId, roomId, 2);
+
+            // The same interleaving as the test above: ranks 0 and 2 share a bed and overlap.
+            seedStay(connection, agencyId, workerId, propertyId, roomId,
+                    LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 30), "PLANNED", 0);
+            seedStay(connection, agencyId, workerId, propertyId, roomId,
+                    LocalDate.of(2026, 1, 5), LocalDate.of(2026, 1, 10), "PLANNED", 1);
+            seedStay(connection, agencyId, workerId, propertyId, roomId,
+                    LocalDate.of(2026, 1, 15), LocalDate.of(2026, 1, 20), "PLANNED", 2);
+        }
+
+        assertThatThrownBy(() -> migrations.migrateToLatest())
+                .hasMessageContaining("Cannot add stay overlap constraints");
     }
 
     private Connection connect() throws Exception {

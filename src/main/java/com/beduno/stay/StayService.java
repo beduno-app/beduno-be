@@ -255,7 +255,11 @@ public class StayService {
 
         var previousStay = snapshot(stay);
         stay.setStatus(StayStatus.CHECKED_OUT);
-        stayRepository.save(stay);
+        // Flushed before the replacement is inserted. A move ends one stay and starts another for
+        // the same worker over the remainder of the same period; while the check-out sits
+        // unflushed in the session, both rows are active at once and the database's overlap
+        // constraints reject the pair.
+        stayRepository.saveAndFlush(stay);
         auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CHECKED_OUT, previousStay, snapshot(stay), null);
 

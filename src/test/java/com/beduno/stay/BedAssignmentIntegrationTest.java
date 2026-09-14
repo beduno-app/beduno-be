@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BedAssignmentIntegrationTest extends IntegrationTestBase {
 
@@ -356,6 +357,90 @@ class BedAssignmentIntegrationTest extends IntegrationTestBase {
             );
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        }
+    }
+
+    /**
+     * The application's conflict checks are a COUNT followed by an INSERT under READ COMMITTED,
+     * with nothing in between: two planners submitting at the same instant both see the bed free.
+     * V15's exclusion constraints are the only thing that can close that window, so these assert
+     * the database refuses the overlap even when the application layer is bypassed entirely.
+     */
+    @Nested
+    class DatabaseLevelOverlapGuard {
+
+        @Test
+        void shouldRejectInsert_whenAnotherActiveStayHoldsTheBed() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var stay = createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            assertThatThrownBy(() -> insertStayDirectly(other.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12)))
+                    .hasMessageContaining("excl_stays_bed_period");
+            assertThat(stay.bedId()).isEqualTo(bed.id());
+        }
+
+        @Test
+        void shouldAllowInsert_whenTheHoldingStayIsTerminal() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var stay = createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+            jdbcTemplate.update("UPDATE stays SET status = 'CANCELLED' WHERE id = ?", stay.id());
+
+            // A cancelled stay places no claim on the bed, so the same period is free again.
+            insertStayDirectly(other.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12));
+        }
+
+        @Test
+        void shouldAllowInsert_whenPeriodsMeetButDoNotOverlap() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var dateTo = LocalDate.now().plusDays(8);
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), dateTo);
+
+            // Half-open [from, to): one stay's last night is the day before the next one's first.
+            // The constraint must agree with the application on this, or check-out day becomes
+            // unbookable.
+            insertStayDirectly(other.id(), property.id(), room.id(), bed.id(), dateTo, dateTo.plusDays(7));
+        }
+
+        @Test
+        void shouldRejectInsert_whenTheSameWorkerIsAlreadyBookedElsewhere() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2);
+            var beds = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).stream()
+                    .sorted(Comparator.comparing(BedResponse::label)).toList();
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), beds.get(0).id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            assertThatThrownBy(() -> insertStayDirectly(worker.id(), property.id(), room.id(), beds.get(1).id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12)))
+                    .hasMessageContaining("excl_stays_worker_period");
+        }
+
+        /** Bypasses the service layer entirely, the way a concurrent request would arrive. */
+        private void insertStayDirectly(UUID workerId, UUID propertyId, UUID roomId, UUID bedId,
+                                         LocalDate dateFrom, LocalDate dateTo) {
+            jdbcTemplate.update(
+                    "INSERT INTO stays (agency_id, worker_id, property_id, room_id, bed_id, "
+                            + "bed_auto_assigned, date_from, date_to, status, version) "
+                            + "VALUES (?, ?, ?, ?, ?, false, ?, ?, 'PLANNED', 0)",
+                    DEFAULT_AGENCY_ID, workerId, propertyId, roomId, bedId, dateFrom, dateTo);
         }
     }
 
