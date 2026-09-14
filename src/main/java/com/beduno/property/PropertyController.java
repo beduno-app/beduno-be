@@ -68,11 +68,7 @@ public class PropertyController {
     public ResponseEntity<PropertyResponse> update(@PathVariable UUID id,
                                                     @Valid @RequestBody UpdatePropertyRequest request,
                                                     @AuthenticationPrincipal CurrentUser currentUser) {
-        if (currentUser.role() == com.beduno.user.Role.PROPERTY_ADMIN) {
-            if (!currentUser.hasPropertyAccess(id)) {
-                throw new com.beduno.common.exception.ForbiddenException("error.property.access_denied");
-            }
-        }
+        currentUser.requirePropertyAccess(id);
         return ResponseEntity.ok(propertyService.update(id, request));
     }
 

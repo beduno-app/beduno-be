@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +26,14 @@ import java.util.ArrayList;
  * the credentials from the environment.
  */
 @Slf4j
+/**
+ * Runs before SeedRunner. Neither declared an order, and this one decides whether to act by
+ * asking whether the users table is empty -- so with the seed first on a fresh database, bootstrap
+ * would find four demo users, log "nothing to do", and the real agency and administrator would
+ * never be created. The operator would see only an INFO line saying so.
+ */
 @Component
+@Order(1)
 @RequiredArgsConstructor
 public class BootstrapRunner implements ApplicationRunner {
 

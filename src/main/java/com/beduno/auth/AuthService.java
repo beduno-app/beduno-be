@@ -5,6 +5,8 @@ import com.beduno.auth.dto.LoginRequest;
 import com.beduno.auth.dto.RefreshRequest;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.exception.UnauthorizedException;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import com.beduno.user.User;
 import com.beduno.user.UserRepository;
 import com.beduno.user.UserStatus;
@@ -55,20 +57,32 @@ public class AuthService {
     }
 
     public AuthResponse refresh(RefreshRequest request) {
-        if (!jwtTokenProvider.validateToken(request.refreshToken())
-                || !jwtTokenProvider.isRefreshToken(request.refreshToken())) {
+        // Parsed once. validateToken, isRefreshToken and the claim reads each used to re-verify
+        // the HMAC over the same string, so a single refresh cost three verifications.
+        Claims claims;
+        try {
+            claims = jwtTokenProvider.parseToken(request.refreshToken());
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new UnauthorizedException("error.auth.invalid_refresh_token");
+        }
+        if (!JwtTokenProvider.REFRESH_TOKEN_TYPE.equals(claims.get("type", String.class))) {
             throw new UnauthorizedException("error.auth.invalid_refresh_token");
         }
 
-        var userId = jwtTokenProvider.getUserId(request.refreshToken());
         // A token whose subject no longer exists is an invalid token, not a missing
         // resource — reporting it as 404 would leak whether an account was deleted.
-        var user = userRepository.findById(userId)
+        var user = userRepository.findById(UUID.fromString(claims.getSubject()))
                 .orElseThrow(() -> new UnauthorizedException("error.auth.invalid_refresh_token"));
 
         // Deactivation has to bite here too, otherwise a refresh token issued before the
         // deactivation keeps minting fresh pairs for its full 7-day life, indefinitely.
         if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new UnauthorizedException("error.auth.invalid_refresh_token");
+        }
+
+        // The revocation lever: a token minted before the user's version was bumped is stale,
+        // even though its signature and expiry are both still perfectly valid.
+        if (jwtTokenProvider.getTokenVersion(claims) != user.getTokenVersion()) {
             throw new UnauthorizedException("error.auth.invalid_refresh_token");
         }
 

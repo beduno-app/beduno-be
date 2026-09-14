@@ -1,6 +1,8 @@
 package com.beduno.common.security;
 
 import com.beduno.auth.JwtTokenProvider;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import com.beduno.user.Role;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -32,14 +34,17 @@ public class TenantFilter extends OncePerRequestFilter {
         MDC.put("requestId", requestId);
         try {
             var token = extractToken(request);
+            // Parsed once, inside the try. validateToken, isRefreshToken and parseToken each
+            // verified the HMAC over the same string, so every authenticated request paid for
+            // three verifications to answer one question.
+            //
             // The refresh check is the other half of the rule enforced in AuthService: the two
             // token kinds are not interchangeable in either direction. It also keeps the claim
             // reads below safe — a refresh token carries no agencyId, and UUID.fromString(null)
             // inside a filter surfaces as a 500 rather than the 401 this case deserves.
-            if (token != null && jwtTokenProvider.validateToken(token)
-                    && !jwtTokenProvider.isRefreshToken(token)) {
-                var claims = jwtTokenProvider.parseToken(token);
-
+            var claims = token != null ? parseOrNull(token) : null;
+            if (claims != null
+                    && !JwtTokenProvider.REFRESH_TOKEN_TYPE.equals(claims.get("type", String.class))) {
                 var userId = UUID.fromString(claims.getSubject());
                 var agencyId = UUID.fromString(claims.get("agencyId", String.class));
                 var role = Role.valueOf(claims.get("role", String.class));
@@ -74,9 +79,22 @@ public class TenantFilter extends OncePerRequestFilter {
         }
     }
 
+    /** Claims for a token with a valid signature and expiry, or null. A bad token is anonymous. */
+    private Claims parseOrNull(String token) {
+        try {
+            return jwtTokenProvider.parseToken(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * RFC 9110 makes the auth scheme case-insensitive, so {@code bearer} has to be accepted
+     * alongside {@code Bearer}; rejecting it produced an unexplained 401 for a conforming client.
+     */
     private String extractToken(HttpServletRequest request) {
         var header = request.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
+        if (header != null && header.regionMatches(true, 0, "Bearer ", 0, 7)) {
             return header.substring(7);
         }
         return null;

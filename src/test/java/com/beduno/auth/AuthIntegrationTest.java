@@ -161,6 +161,52 @@ class AuthIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody()).contains("error.auth.invalid_refresh_token");
         }
 
+        /**
+         * Refresh tokens are stateless and live seven days, and nothing was ever compared against
+         * the database -- so a leaked one kept minting fresh pairs for its whole lifetime and the
+         * only lever was rotating JWT_SECRET, which logs out every tenant at once. The token
+         * version is that lever, scoped to one account.
+         */
+        @Test
+        void shouldReturnUnauthorized_whenTokenVersionHasMovedOn() {
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var login = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            jdbcTemplate.update("UPDATE users SET token_version = token_version + 1 WHERE email = ?", email);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", login.refreshToken()),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("error.auth.invalid_refresh_token");
+        }
+
+        @Test
+        void shouldIssueAUsableToken_whenTokenVersionIsUnchanged() {
+            // The version check must not reject ordinary refreshes: the pair handed back by one
+            // refresh has to survive the next one.
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var first = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            var second = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", first.refreshToken()), AuthResponse.class
+            ).getBody();
+            var third = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", second.refreshToken()), AuthResponse.class
+            );
+
+            assertThat(third.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+
         @Test
         void shouldReturnUnauthorized_whenRefreshTokenIsInvalid() {
             var request = java.util.Map.of("refreshToken", "invalid-token");

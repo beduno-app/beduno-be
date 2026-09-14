@@ -102,6 +102,11 @@ public class UserService {
         }
 
         userMapper.updateEntity(request, user);
+        // Same reasoning as deactivate(): whichever route takes the account out of service has to
+        // revoke the long-lived credential with it.
+        if (request.status() == UserStatus.INACTIVE) {
+            user.setTokenVersion(user.getTokenVersion() + 1);
+        }
         user = userRepository.save(user);
         auditService.log(user.getAgencyId(), currentUserId(), AuditEntityType.USER, user.getId(),
                 AuditAction.UPDATED, previous, snapshot(user), null);
@@ -129,6 +134,10 @@ public class UserService {
 
         var previous = snapshot(user);
         user.setStatus(UserStatus.INACTIVE);
+        // Cuts the deactivated user's existing refresh token short instead of letting it live out
+        // its remaining seven days. Their access token still works until it expires (at most an
+        // hour); that is inherent to a stateless access token and is the bound the design accepts.
+        user.setTokenVersion(user.getTokenVersion() + 1);
         user = userRepository.save(user);
         auditService.log(user.getAgencyId(), currentUserId(), AuditEntityType.USER, user.getId(),
                 AuditAction.UPDATED, previous, snapshot(user), "deactivated");

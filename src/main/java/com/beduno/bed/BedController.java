@@ -7,9 +7,7 @@ import com.beduno.bed.dto.BedResponse;
 import com.beduno.bed.dto.BulkGenerateBedsRequest;
 import com.beduno.bed.dto.CreateBedRequest;
 import com.beduno.bed.dto.UpdateBedRequest;
-import com.beduno.common.exception.ForbiddenException;
 import com.beduno.common.security.CurrentUser;
-import com.beduno.user.Role;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -61,7 +59,7 @@ public class BedController {
                                                @PathVariable UUID roomId,
                                                @Valid @RequestBody CreateBedRequest request,
                                                @AuthenticationPrincipal CurrentUser currentUser) {
-        checkPropertyAccess(currentUser, propertyId);
+        currentUser.requirePropertyAccess(propertyId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(bedService.create(propertyId, roomId, request));
     }
@@ -75,7 +73,7 @@ public class BedController {
                                                             @PathVariable UUID roomId,
                                                             @Valid @RequestBody BulkGenerateBedsRequest request,
                                                             @AuthenticationPrincipal CurrentUser currentUser) {
-        checkPropertyAccess(currentUser, propertyId);
+        currentUser.requirePropertyAccess(propertyId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(bedService.bulkGenerate(propertyId, roomId, request.count()));
     }
@@ -88,7 +86,7 @@ public class BedController {
                                                @PathVariable UUID bedId,
                                                @Valid @RequestBody UpdateBedRequest request,
                                                @AuthenticationPrincipal CurrentUser currentUser) {
-        checkPropertyAccess(currentUser, propertyId);
+        currentUser.requirePropertyAccess(propertyId);
         return ResponseEntity.ok(bedService.update(propertyId, roomId, bedId, request));
     }
 
@@ -104,9 +102,4 @@ public class BedController {
         return ResponseEntity.noContent().build();
     }
 
-    private void checkPropertyAccess(CurrentUser currentUser, UUID propertyId) {
-        if (currentUser.role() == Role.PROPERTY_ADMIN && !currentUser.hasPropertyAccess(propertyId)) {
-            throw new ForbiddenException("error.property.access_denied");
-        }
-    }
 }
