@@ -1,5 +1,6 @@
 package com.beduno.stay.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotEmpty;
@@ -29,6 +30,7 @@ public record BulkAssignRequest(
     ) {
 
         /** See {@link CreateStayRequest#isDateRangeValid()}. */
+        @JsonIgnore
         @AssertTrue(message = "error.stay.invalid_dates")
         public boolean isDateRangeValid() {
             return dateFrom == null || dateTo == null || dateTo.isAfter(dateFrom);

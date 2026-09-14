@@ -1581,6 +1581,7 @@ components:
       required:
       - email
       - firstName
+      - language
       - lastName
       - role
       - status
@@ -1897,6 +1898,8 @@ components:
       properties:
         internalId:
           type: string
+          maxLength: 100
+          minLength: 0
         firstName:
           type: string
           maxLength: 100
@@ -2001,6 +2004,7 @@ components:
       required:
       - email
       - firstName
+      - language
       - lastName
       - password
       - role
@@ -2081,6 +2085,8 @@ components:
           items:
             type: string
             format: uuid
+          maxItems: 500
+          minItems: 0
       required:
       - stayIds
     BulkCheckoutResult:
@@ -2141,6 +2147,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Assignment"
+          maxItems: 500
+          minItems: 0
       required:
       - assignments
     AssignmentResult:
@@ -2227,6 +2235,7 @@ components:
         count:
           type: integer
           format: int32
+          maximum: 200
           minimum: 1
     InspectionReportRequest:
       type: object

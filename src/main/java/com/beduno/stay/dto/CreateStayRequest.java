@@ -1,5 +1,6 @@
 package com.beduno.stay.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 
@@ -22,6 +23,9 @@ public record CreateStayRequest(
      * request passed the constraint engine and only failed at the chk_stays_dates CHECK, which
      * surfaced as a 500.
      */
+    // @JsonIgnore keeps this validation-only accessor out of the OpenAPI schema and out of
+    // serialization: it is a rule, not a field, and no client should send or read it.
+    @JsonIgnore
     @AssertTrue(message = "error.stay.invalid_dates")
     public boolean isDateRangeValid() {
         return dateFrom == null || dateTo == null || dateTo.isAfter(dateFrom);
