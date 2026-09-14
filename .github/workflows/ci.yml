@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The wrapper jar is executable code committed to the repository; this checks it against the
       # published Gradle distributions rather than trusting it.
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # These run on a box nobody is watching, against an instance holding the only copy of the
       # database. A syntax error in them surfaces at the worst possible moment.
