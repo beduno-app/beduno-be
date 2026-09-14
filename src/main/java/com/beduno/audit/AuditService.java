@@ -3,9 +3,12 @@ package com.beduno.audit;
 import com.beduno.common.model.SortFields;
 import com.beduno.audit.dto.AuditEventResponse;
 import com.beduno.common.model.PageResponse;
+import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
+import com.beduno.user.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,8 +55,23 @@ public class AuditService {
             Instant dateFrom, Instant dateTo, Pageable pageable) {
         var agencyId = TenantContext.requireAgencyId();
         var page = auditRepository.findAllWithFilters(
-                agencyId, entityType, entityId, actorUserId, dateFrom, dateTo,
+                agencyId, entityType, hiddenEntityType(), entityId, actorUserId, dateFrom, dateTo,
                 SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(auditMapper::toResponse));
+    }
+
+    /**
+     * USER audit events carry every account's email, name and role in their state snapshots --
+     * the same roster {@code /api/v1/users} is restricted to AGENCY_ADMIN precisely because it
+     * exposes it. This endpoint is open to AGENCY_PLANNER as well, so for anyone but an admin
+     * those events are filtered out rather than handed over through the back door.
+     */
+    private AuditEntityType hiddenEntityType() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser
+                && currentUser.role() == Role.AGENCY_ADMIN) {
+            return null;
+        }
+        return AuditEntityType.USER;
     }
 }

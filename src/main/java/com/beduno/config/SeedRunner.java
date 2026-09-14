@@ -29,10 +29,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +60,9 @@ import java.util.UUID;
  * produces is real without needing either.
  */
 @Slf4j
+/** Runs after BootstrapRunner; see that class for why the order is declared rather than left to chance. */
 @Component
+@Order(2)
 @RequiredArgsConstructor
 public class SeedRunner implements ApplicationRunner {
 
@@ -75,6 +79,7 @@ public class SeedRunner implements ApplicationRunner {
     private final StayRepository stayRepository;
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -143,7 +148,7 @@ public class SeedRunner implements ApplicationRunner {
         var irynaMelnyk = createWorker(agencyId, actorId, "W-DEMO-008", "Iryna", "Melnyk",
                 Gender.FEMALE, "UA", List.of("cook"), WorkerStatus.ACTIVE);
 
-        var today = LocalDate.now();
+        var today = LocalDate.now(clock);
 
         createStay(agencyId, actorId, janKowalski.getId(), sunrise.getId(), room101.getId(), bed101a.getId(),
                 today.minusDays(2), today.plusDays(5), StayStatus.CHECKED_IN, actorId, null);

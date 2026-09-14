@@ -117,13 +117,13 @@ BusinessException (abstract)
 ```json
 {
   "error": "CONSTRAINT_VIOLATION",
-  "message": "constraint.capacity.exceeded",
+  "message": "error.constraint.violated",
   "details": [
     {
-      "type": "CAPACITY_EXCEEDED",
-      "field": "roomId",
-      "message": "constraint.room.capacity.full",
-      "params": { "roomNumber": "12", "capacity": 4, "current": 4 }
+      "type": "BED_OCCUPIED",
+      "field": null,
+      "message": "constraint.bed.occupied",
+      "params": { "bedLabel": "3", "roomNumber": "12" }
     }
   ],
   "timestamp": "2026-04-14T12:00:00Z"
@@ -184,7 +184,7 @@ Response wraps in:
 - Use `dateFrom` and `dateTo` for date range filters
 
 ### Responses
-- `201 Created` for resource creation (with `Location` header)
+- `201 Created` for resource creation. No `Location` header: nothing sets one, and the created resource is in the body, so a client never needs to follow up with a GET. Do not add one to a single endpoint -- either every creation gets it or none does.
 - `200 OK` for updates, reads
 - `204 No Content` for deletes
 - `422 Unprocessable Entity` for business rule violations

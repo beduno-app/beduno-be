@@ -2,7 +2,6 @@ package com.beduno.stay;
 
 import com.beduno.stay.dto.CreateStayRequest;
 import com.beduno.stay.dto.StayResponse;
-import com.beduno.stay.dto.StaySummary;
 import com.beduno.stay.dto.UpdateStayRequest;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -39,5 +38,4 @@ public interface StayMapper {
 
     StayResponse toResponse(Stay stay);
 
-    StaySummary toSummary(Stay stay);
 }

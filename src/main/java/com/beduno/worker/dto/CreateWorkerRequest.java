@@ -9,7 +9,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record CreateWorkerRequest(
-        @NotBlank String internalId,
+        // workers.internal_id is VARCHAR(100); without the bound a longer value reached the
+        // column and came back as a 500 instead of a field error.
+        @NotBlank @Size(max = 100) String internalId,
         @NotBlank @Size(max = 100) String firstName,
         @NotBlank @Size(max = 100) String lastName,
         @NotNull Gender gender,

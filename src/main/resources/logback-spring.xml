@@ -15,8 +15,26 @@
     <springProfile name="prod">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <!-- Structured single-line format parseable by log aggregators -->
-                <pattern>{"ts":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}","level":"%-5level","logger":"%logger{40}","rid":"%X{requestId}","uid":"%X{userId}","aid":"%X{agencyId}","msg":"%replace(%msg){'\"','\\\"'}"}%n</pattern>
+                <!--
+                  Structured single-line format parseable by log aggregators.
+
+                  Three things this pattern has to get right, all of which the earlier version
+                  got wrong, and all of which matter most for exactly the lines an aggregator
+                  must not drop: the ones carrying a stack trace.
+
+                  1. %nopex suppresses Logback's default behaviour of appending the throwable
+                     after the pattern. Without it every log.error(msg, ex) emitted one JSON
+                     object followed by sixty lines of raw text, so `instance.sh logs` for an
+                     incident was mostly unparseable.
+                  2. The throwable goes in its own "ex" field, with newlines, tabs and carriage
+                     returns replaced so the record stays on one line.
+                  3. Escaping covers backslash before quote, and control characters. Escaping
+                     only the quote meant a message containing a backslash produced a trailing
+                     \" that terminated the string early and broke the object.
+
+                  The %replace chains read backwards: the innermost is applied first.
+                -->
+                <pattern>{"ts":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}","level":"%-5level","logger":"%logger{40}","rid":"%X{requestId}","uid":"%X{userId}","aid":"%X{agencyId}","msg":"%replace(%replace(%replace(%msg){'\\','\\\\'}){'"','\\"'}){'[\n\r\t]+',' '}","ex":"%replace(%replace(%replace(%ex){'\\','\\\\'}){'"','\\"'}){'[\n\r\t]+','\\n'}"}%nopex%n</pattern>
             </encoder>
         </appender>
         <root level="INFO">

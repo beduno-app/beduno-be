@@ -33,8 +33,8 @@ public class BlockedRoomConstraint implements StayConstraint {
             ));
         }
 
-        // Null-guard matches BedOccupancyConstraint: no write path resolves a real bed until
-        // phase 4, see ConstraintContext's Javadoc.
+        // Null-guard matches BedOccupancyConstraint; see ConstraintContext's Javadoc for why a
+        // null bed is tolerated rather than rejected.
         if (ctx.bed() != null && ctx.bed().getStatus() == BedStatus.BLOCKED) {
             hard.add(new HardViolation(
                     "BED_BLOCKED",

@@ -1,10 +1,10 @@
 # Repository Guidelines
 
-Beduno is a worker-housing management API for temporary work agencies: Java 21, Spring Boot 3.4, PostgreSQL 16, Flyway, JWT. See @README.md for endpoints and environment variables, @CLAUDE.md and @docs/coding-guidelines.md for depth.
+Beduno is a worker-housing management API for temporary work agencies: Java 21, Spring Boot 3.5, PostgreSQL 16, Flyway, JWT. See @README.md for endpoints and environment variables, @CLAUDE.md and @docs/coding-guidelines.md for depth.
 
 ## Hard Rules
 
-- Every repository query filters by `agencyId`. Three sanctioned exceptions exist — `StayRepository.findPlannedArrivingOn` (the nightly cross-agency scheduler sweep), `OccupancyService.loadWorkers`, and `BootstrapRunner` (runs at startup before any tenant exists, to ask whether the users table is empty); any new cross-tenant query needs the same explicit justification, recorded in @CLAUDE.md and here.
+- Every repository query filters by `agencyId`. The sanctioned exceptions are `StayRepository.findPlannedArrivingOnOrBefore` (the cross-agency scheduler sweep, which runs with no `TenantContext`), `BootstrapRunner` (runs at startup before any tenant exists, to ask whether the users table is empty), and the uniqueness checks listed in @CLAUDE.md. `OccupancyService.loadWorkers` was retired on 2026-09-14 in favour of `findAllByAgencyIdAndIdIn`; prefer the scoped batch lookup over `findAllById`, whose safety depends on where the caller's ids came from and is therefore invisible at the call site. Any new cross-tenant query needs the same explicit justification, recorded in @CLAUDE.md and here.
 - Never edit an existing Flyway migration. Add `src/main/resources/db/migration/V{n}__{description}.sql`.
 - Never hardcode user-facing text. Throw `BusinessException` subclasses carrying a message code, and define that code in all six bundles under `src/main/resources/i18n/` — `MessageBundleTest` fails on a missing key, a blank value, or a code referenced from Java but undefined.
 - Never log PII, passwords, or tokens.

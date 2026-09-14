@@ -10,6 +10,7 @@ import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
 import com.beduno.occupancy.dto.InspectionRoomEntry;
 import com.beduno.occupancy.dto.OccupancyExceptionResponse;
+import com.beduno.occupancy.dto.OccupantSummary;
 import com.beduno.occupancy.dto.RoomActualOccupancy;
 import com.beduno.occupancy.dto.RoomOccupancyResponse;
 import com.beduno.property.dto.CreatePropertyRequest;
@@ -64,12 +65,73 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().status()).isEqualTo(StayStatus.CHECKED_IN);
+        }
+
+        /**
+         * The planner's explicit choice must survive a minimal check-in. resolveBed excludes this
+         * stay from the occupancy counts, so re-running auto-assign returned the lowest-labelled
+         * free bed -- typically not the bed on the printed arrivals sheet.
+         */
+        @Test
+        void shouldKeepPlannedBed_whenCheckInHasNoBedOverride() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var beds = listBeds(property.id(), room.id()).stream()
+                    .sorted(java.util.Comparator.comparing(BedResponse::label)).toList();
+            var chosen = beds.get(3);
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), chosen.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            var stay = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            ).getBody();
+            assertThat(stay.bedId()).isEqualTo(chosen.id());
+            assertThat(stay.bedAutoAssigned()).isFalse();
+            forceExpectedToday(stay.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeadersAt(Role.FRONT_DESK, property.id())),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().bedId()).isEqualTo(chosen.id());
+            assertThat(response.getBody().bedAutoAssigned()).isFalse();
+        }
+
+        @Test
+        void shouldRejectCheckIn_whenRoomBelongsToAnotherProperty() {
+            // A stay whose room sits outside its property is invisible in every occupancy view:
+            // the property's views drop it for want of a matching room, the room's property never
+            // fetches it. The worker is checked in and appears nowhere.
+            var worker = createWorker();
+            var property = createProperty();
+            var otherProperty = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var foreignRoom = createRoom(otherProperty.id(), 4, 0);
+
+            var stay = createPlannedStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7));
+            forceExpectedToday(stay.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
+                    new HttpEntity<>(new CheckInRequest(foreignRoom.id(), null, null),
+                            authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).contains("error.room.not_found");
         }
 
         @Test
@@ -85,7 +147,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 
@@ -106,7 +168,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     String.class
             );
 
@@ -125,7 +187,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/no-show",
                     HttpMethod.POST,
-                    new HttpEntity<>(new NoShowRequest("NO_TRANSPORT"), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new NoShowRequest("NO_TRANSPORT"), authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
@@ -173,7 +235,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, otherBed.id(), null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, otherBed.id(), null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     ErrorResponse.class
             );
 
@@ -196,7 +258,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, blockedBed.id(), null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, blockedBed.id(), null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     ErrorResponse.class
             );
 
@@ -204,15 +266,14 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
         }
 
-        // Documents a known gap (test-plan.md Risk #3, research.md Open Question 1): StayController
-        // performs no property-scope check today, so a PROPERTY_ADMIN whose assignedPropertyIds does
-        // NOT include this stay's property can still check it in. This test intentionally asserts
-        // today's actual (insecure) behavior as a trip-wire -- it will start failing once roadmap
-        // slice S-08 ("enforce-property-scoping") adds the missing check, at which point whoever
-        // implements S-08 should update or remove it. See the Occupancy sibling test in
-        // OccupancyEndpoints for the same pattern.
+        /**
+         * Was a trip-wire asserting the insecure behaviour while property scoping was documented
+         * but unenforced (test-plan.md risk #3, roadmap slice S-08). Scoping is enforced now, so
+         * it asserts the rule instead: every single-stay operation resolves the stay through one
+         * lookup, and that lookup checks the caller against the stay's property.
+         */
         @Test
-        void shouldAllowCheckIn_whenPropertyAdminNotAssignedToStaysProperty() {
+        void shouldRejectCheckIn_whenPropertyAdminNotAssignedToStaysProperty() {
             var worker = createWorker();
             var property = createProperty();
             var room = createRoom(property.id(), 4, 0);
@@ -225,10 +286,11 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
                     new HttpEntity<>(new CheckInRequest(null, null, null), headers),
-                    StayResponse.class
+                    String.class
             );
 
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getBody()).contains("error.property.access_denied");
         }
     }
 
@@ -245,7 +307,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-out",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckOutRequest(null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckOutRequest(null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
@@ -264,7 +326,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-out",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckOutRequest(actualDate), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new CheckOutRequest(actualDate), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 
@@ -287,7 +349,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 
@@ -297,7 +359,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
 
             var oldStayResponse = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id(), HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
             assertThat(oldStayResponse.getBody().status()).isEqualTo(StayStatus.CHECKED_OUT);
@@ -313,7 +375,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(room.id(), stay.bedId(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(room.id(), stay.bedId(), null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     String.class
             );
 
@@ -332,13 +394,74 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(room.id(), otherBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(room.id(), otherBed.id(), null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().roomId()).isEqualTo(room.id());
             assertThat(response.getBody().bedId()).isEqualTo(otherBed.id());
+        }
+
+        /**
+         * Same-room move with no explicit target. resolveBed excludes this stay, so the worker's
+         * own bed looked free and -- first by label -- was returned, which the equality check then
+         * rejected as "same bed" even with the rest of the room empty.
+         */
+        @Test
+        void shouldMoveToNextFreeBed_whenSameRoomAutoAssign() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().roomId()).isEqualTo(room.id());
+            assertThat(response.getBody().bedId()).isNotEqualTo(stay.bedId());
+        }
+
+        @Test
+        void shouldRejectMove_whenSameRoomAutoAssignAndNoOtherBedFree() {
+            // A one-bed room has nowhere to move to, so the same-bed refusal still stands.
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 1, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(room.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        void shouldRejectMove_whenTargetRoomBelongsToAnotherProperty() {
+            var worker = createWorker();
+            var property = createProperty();
+            var otherProperty = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            var foreignRoom = createRoom(otherProperty.id(), 4, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id() + "/move",
+                    HttpMethod.POST,
+                    new HttpEntity<>(new MoveRequest(foreignRoom.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
 
         @Test
@@ -360,7 +483,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), occupiedBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), occupiedBed.id(), null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     ErrorResponse.class
             );
 
@@ -382,7 +505,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(targetRoom.id(), blockedBed.id(), null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(targetRoom.id(), blockedBed.id(), null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     ErrorResponse.class
             );
 
@@ -406,7 +529,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/arrivals?propertyId=" + property.id() + "&date=" + LocalDate.now(),
                     HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(authHeadersAt(Role.FRONT_DESK, property.id())),
                     new ParameterizedTypeReference<List<StayResponse>>() {}
             );
 
@@ -430,7 +553,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/occupancy?date=" + LocalDate.now(),
                     HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     new ParameterizedTypeReference<List<RoomOccupancyResponse>>() {}
             );
 
@@ -470,7 +593,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/exceptions?date=" + LocalDate.now(),
                     HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     new ParameterizedTypeReference<List<OccupancyExceptionResponse>>() {}
             );
 
@@ -482,13 +605,99 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(exception.get().exceptionType()).isEqualTo("OVER_CAPACITY");
         }
 
-        // Documents a known gap (test-plan.md Risk #3, research.md Open Question 1): OccupancyController
-        // performs no property-scope check today, so a PROPERTY_ADMIN whose assignedPropertyIds does
-        // NOT include this property can still read its occupancy. Sibling case to the check-in
-        // trip-wire in CheckInWorkflow -- same rationale, same roadmap slice (S-08) will eventually
-        // make this test fail.
+        /**
+         * A worker whose planned dateTo has passed but who was never checked out is still in the
+         * building. Requiring dateTo > today made him vanish from occupancy, freed his bed for
+         * someone else, and left the inspector reporting him as UNEXPECTED_PRESENT.
+         */
         @Test
-        void shouldAllowOccupancyRead_whenPropertyAdminNotAssignedToProperty() {
+        void shouldStillShowCheckedInWorker_whenPlannedDateToHasPassed() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+            // The stay ran [yesterday, today): half-open, so today he should already be gone --
+            // but he was never checked out and is still in the bed.
+            jdbcTemplate.update("UPDATE stays SET date_to = ? WHERE id = ?",
+                    LocalDate.now(), stay.id());
+
+            var occupancy = getOccupancy(property.id(), LocalDate.now()).stream()
+                    .filter(r -> r.roomId().equals(room.id())).findFirst().orElseThrow();
+
+            assertThat(occupancy.occupiedSpots()).isEqualTo(1);
+            assertThat(occupancy.occupants()).extracting(OccupantSummary::workerId).contains(worker.id());
+        }
+
+        @Test
+        void shouldReturnOverstayException_whenPlannedDateToHasPassed() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var stay = checkedInStay(worker.id(), property.id(), room.id());
+            // The stay ran [yesterday, today): half-open, so today he should already be gone --
+            // but he was never checked out and is still in the bed.
+            jdbcTemplate.update("UPDATE stays SET date_to = ? WHERE id = ?",
+                    LocalDate.now(), stay.id());
+
+            var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
+                    .filter(e -> e.roomId().equals(room.id())).toList();
+
+            assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType).contains("OVERSTAY");
+        }
+
+        /**
+         * The room-level headcount check cannot see this: two workers on one bed of a two-bed room
+         * keeps the count within capacity. It is exactly the shape of the V12 backfill defect.
+         *
+         * <p>V15's exclusion constraint now prevents this state from being created, so the conflict
+         * has to be seeded with the constraint lifted -- which is precisely the population this
+         * report exists for: rows that predate the guard. New conflicts are the constraint's job;
+         * finding the old ones is this report's.
+         */
+        @Test
+        void shouldReturnException_whenTwoWorkersCheckedInOnSameBed() {
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 2, 0);
+            var first = checkedInStay(worker1.id(), property.id(), room.id());
+            var second = checkedInStay(worker2.id(), property.id(), room.id());
+
+            withoutBedExclusionConstraint(() -> {
+                jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", first.bedId(), second.id());
+
+                var exceptions = getExceptions(property.id(), LocalDate.now()).stream()
+                        .filter(e -> e.roomId().equals(room.id())).toList();
+
+                assertThat(exceptions).extracting(OccupancyExceptionResponse::exceptionType)
+                        .contains("BED_CONFLICT");
+                var conflict = exceptions.stream()
+                        .filter(e -> e.exceptionType().equals("BED_CONFLICT")).findFirst().orElseThrow();
+                assertThat(conflict.occupants()).extracting(OccupantSummary::workerId)
+                        .containsExactlyInAnyOrder(worker1.id(), worker2.id());
+
+                // Undo the conflict so the guard can be put back.
+                jdbcTemplate.update("UPDATE stays SET bed_id = ? WHERE id = ?", second.bedId(), second.id());
+            });
+        }
+
+        @Test
+        void shouldReturnNotFound_whenPropertyDoesNotExist() {
+            // All four occupancy endpoints used to answer an unknown or foreign id with an empty
+            // list, which reads as "this property is empty" and differs from every other module.
+            // Asked as AGENCY_ADMIN, who is agency-wide: that pins the 404 to the property not
+            // existing rather than to the caller's scope.
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + UUID.randomUUID() + "/occupancy?date=" + LocalDate.now(),
+                    HttpMethod.GET, new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        /** The occupancy sibling of the check-in case; see that test for the history. */
+        @Test
+        void shouldRejectOccupancyRead_whenPropertyAdminNotAssignedToProperty() {
             var worker = createWorker();
             var property = createProperty();
             var room = createRoom(property.id(), 4, 0);
@@ -499,10 +708,11 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
                     "/api/v1/properties/" + property.id() + "/occupancy?date=" + LocalDate.now(),
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
-                    new ParameterizedTypeReference<List<RoomOccupancyResponse>>() {}
+                    String.class
             );
 
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getBody()).contains("error.property.access_denied");
         }
     }
 
@@ -519,7 +729,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
                     HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     new ParameterizedTypeReference<List<InspectionRoomEntry>>() {}
             );
 
@@ -538,7 +748,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
                     HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(authHeadersAt(Role.FRONT_DESK, property.id())),
                     String.class
             );
 
@@ -558,7 +768,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
                     HttpMethod.POST,
-                    new HttpEntity<>(report, authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(report, authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     InspectionDiscrepancyResponse.class
             );
 
@@ -571,6 +781,59 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             assertThat(roomDiscrepancy.get().items())
                     .extracting(d -> d.discrepancyType())
                     .contains("EXPECTED_NOT_PRESENT");
+        }
+
+        /**
+         * A mobile inspector scanning a room in two passes sends it twice. Collectors.toMap with
+         * no merge function made that an IllegalStateException, reported as a 500.
+         */
+        @Test
+        void shouldMergeDuplicateRoomEntries_whenReportRepeatsARoom() {
+            var worker1 = createWorker();
+            var worker2 = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            checkedInStay(worker1.id(), property.id(), room.id());
+            checkedInStay(worker2.id(), property.id(), room.id());
+
+            var report = new InspectionReportRequest(List.of(
+                    new RoomActualOccupancy(room.id(), List.of(worker1.id())),
+                    new RoomActualOccupancy(room.id(), List.of(worker2.id()))
+            ));
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(report, authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    InspectionDiscrepancyResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            // Both passes together account for everyone expected, so the merged report matches.
+            assertThat(response.getBody().hasDiscrepancies()).isFalse();
+        }
+
+        @Test
+        void shouldReportOneDiscrepancy_whenAWorkerIdIsRepeated() {
+            var worker = createWorker();
+            var property = createProperty();
+            var room = createRoom(property.id(), 4, 0);
+            checkedInStay(worker.id(), property.id(), room.id());
+            var stranger = createWorker();
+
+            var report = new InspectionReportRequest(List.of(
+                    new RoomActualOccupancy(room.id(), List.of(worker.id(), stranger.id(), stranger.id()))
+            ));
+            var response = restTemplate.exchange(
+                    "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(report, authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
+                    InspectionDiscrepancyResponse.class
+            );
+
+            var items = response.getBody().discrepancies().stream()
+                    .filter(d -> d.roomId().equals(room.id())).findFirst().orElseThrow().items();
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).discrepancyType()).isEqualTo("UNEXPECTED_PRESENT");
         }
 
         @Test
@@ -586,7 +849,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/properties/" + property.id() + "/inspection?date=" + LocalDate.now(),
                     HttpMethod.POST,
-                    new HttpEntity<>(report, authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(report, authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     InspectionDiscrepancyResponse.class
             );
 
@@ -605,13 +868,20 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             var room = createRoom(property.id(), 4, 0);
             var altRoom = createRoom(property.id(), 4, 0);
 
-            // 1. Create planned stay
+            // 1. Create a stay arriving tomorrow: not due yet, so still PLANNED
             var stay = createPlannedStay(worker.id(), property.id(), room.id(),
-                    LocalDate.now(), LocalDate.now().plusDays(7));
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(7));
             assertThat(stay.status()).isEqualTo(StayStatus.PLANNED);
 
-            // 2. Scheduler transition (manual trigger)
-            forceExpectedToday(stay.id());
+            // 2. Bring the arrival forward to today. A due stay is promoted on the spot rather
+            // than waiting for the next sweep -- otherwise a stay planned for today after the
+            // 06:00 run could never be checked in, since PLANNED has no path to CHECKED_IN.
+            var broughtForward = new com.beduno.stay.dto.UpdateStayRequest(
+                    room.id(), null, LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(broughtForward, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
             var afterTransition = getStay(stay.id());
             assertThat(afterTransition.status()).isEqualTo(StayStatus.EXPECTED_TODAY);
 
@@ -623,7 +893,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
             assertThat(getStay(stay.id()).status()).isEqualTo(StayStatus.CHECKED_IN);
@@ -637,7 +907,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move",
                     HttpMethod.POST,
-                    new HttpEntity<>(new MoveRequest(altRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new MoveRequest(altRoom.id(), null, null), authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 
@@ -650,7 +920,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
             restTemplate.exchange(
                     "/api/v1/stays/" + getLatestStayForWorker(worker.id()).id() + "/check-out",
                     HttpMethod.POST,
-                    new HttpEntity<>(new CheckOutRequest(null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckOutRequest(null), authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
@@ -759,8 +1029,34 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         return restTemplate.exchange(
                 "/api/v1/stays/arrivals?propertyId=" + propertyId + "&date=" + date,
                 HttpMethod.GET,
-                new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
+                new HttpEntity<>(authHeadersAt(Role.FRONT_DESK, propertyId)),
                 new ParameterizedTypeReference<List<StayResponse>>() {}
+        ).getBody();
+    }
+
+    /**
+     * Runs a seed step with the bed-overlap exclusion constraint lifted, to create the kind of
+     * conflicting row that exists only in data written before V15 added the guard. Restored in a
+     * finally block so a failure here cannot leave the shared test database unguarded.
+     */
+    private void withoutBedExclusionConstraint(Runnable seed) {
+        jdbcTemplate.execute("ALTER TABLE stays DROP CONSTRAINT excl_stays_bed_period");
+        try {
+            seed.run();
+        } finally {
+            jdbcTemplate.execute("""
+                    ALTER TABLE stays ADD CONSTRAINT excl_stays_bed_period
+                    EXCLUDE USING gist (bed_id WITH =, daterange(date_from, date_to, '[)') WITH &&)
+                    WHERE (status IN ('PLANNED', 'EXPECTED_TODAY', 'CHECKED_IN'))
+                    """);
+        }
+    }
+
+    private List<OccupancyExceptionResponse> getExceptions(UUID propertyId, LocalDate date) {
+        return restTemplate.exchange(
+                "/api/v1/properties/" + propertyId + "/exceptions?date=" + date, HttpMethod.GET,
+                new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, propertyId)),
+                new ParameterizedTypeReference<List<OccupancyExceptionResponse>>() {}
         ).getBody();
     }
 
@@ -768,7 +1064,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/occupancy?date=" + date,
                 HttpMethod.GET,
-                new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, propertyId)),
                 new ParameterizedTypeReference<List<RoomOccupancyResponse>>() {}
         ).getBody();
     }
@@ -777,7 +1073,7 @@ class OperationalWorkflowIntegrationTest extends IntegrationTestBase {
         return restTemplate.exchange(
                 "/api/v1/properties/" + propertyId + "/inspection?date=" + date,
                 HttpMethod.GET,
-                new HttpEntity<>(authHeaders(Role.PROPERTY_ADMIN)),
+                new HttpEntity<>(authHeadersAt(Role.PROPERTY_ADMIN, propertyId)),
                 new ParameterizedTypeReference<List<InspectionRoomEntry>>() {}
         ).getBody();
     }

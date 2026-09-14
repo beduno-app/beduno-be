@@ -2,7 +2,7 @@
 
 ## Project
 
-Beduno is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.4 + PostgreSQL 16.
+Beduno is a worker housing management system for temporary work agencies. Java 21 + Spring Boot 3.5 + PostgreSQL 16.
 
 ## Build & Test
 
@@ -37,9 +37,10 @@ docker compose -f docker/docker-compose.yml up -d  # Start local PostgreSQL
 
 Shared schema with `agency_id` discriminator. `TenantContext` (ThreadLocal) set by `TenantFilter` from JWT claims. Every repository query MUST filter by agencyId, with these sanctioned exceptions:
 
-- `StayRepository.findPlannedArrivingOn` — deliberately cross-tenant; it backs the nightly scheduler sweep that transitions PLANNED stays to EXPECTED_TODAY across all agencies.
-- `OccupancyService.loadWorkers` — uses `findAllById`, safe today only because the ids it's given already came from an agency-filtered stay query. Don't reuse that pattern with an unfiltered id list.
+- `StayRepository.findPlannedArrivingOnOrBefore` — deliberately cross-tenant; it backs the scheduler sweep that transitions due PLANNED stays to EXPECTED_TODAY across all agencies, and runs on a thread that has no `TenantContext`.
+- ~~`OccupancyService.loadWorkers`~~ — retired 2026-09-14. It used `findAllById`, safe only because the ids came from an agency-filtered stay query; it now uses `findAllByAgencyIdAndIdIn`, as does `ExportService.bedLabelById`. Whether an unscoped batch lookup is safe depends on where the caller's ids came from, which is not visible at the call site — use the scoped variant.
 - `BootstrapRunner` — `userRepository.count()` and `AgencyRepository` (plain `JpaRepository`) run before any tenant exists, which is the point: the runner's whole question is whether the users table is empty. It runs once at startup, never on a request, and there is no `TenantContext` to filter by.
+- `UserRepository.findByEmail` / `existsByEmail` / `existsByEmailAndIdNot` and `RoomRepository.existsByPropertyIdAndRoomNumber` / `BedRepository.existsByRoomIdAndLabel` — uniqueness checks against globally or parent-scoped unique constraints. Login has no tenant yet when it resolves an email, and `uq_users_email` is global by design (V8); the room and bed checks key on a parent id that is itself agency-scoped.
 
 Any new cross-tenant query needs the same explicit justification, recorded here and in AGENTS.md.
 

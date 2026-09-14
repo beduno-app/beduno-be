@@ -49,4 +49,12 @@ public class User extends BaseEntity {
 
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
+
+    /**
+     * The generation a refresh token must carry to still be accepted. Bumping it invalidates every
+     * refresh token issued for this user so far, which is the only way to cut short a stateless
+     * seven-day credential short of rotating the signing key for every tenant at once.
+     */
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion = 0;
 }

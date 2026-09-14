@@ -1,14 +1,18 @@
 package com.beduno.auth;
 
 import com.beduno.IntegrationTestBase;
+import com.beduno.auth.dto.AuthResponse;
 import com.beduno.auth.dto.LoginRequest;
 import com.beduno.user.Role;
+import com.beduno.user.UserStatus;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.UUID;
 
@@ -17,8 +21,77 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthIntegrationTest extends IntegrationTestBase {
 
+    private static final String PASSWORD = "correct-horse-battery-staple";
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    /** Inserts a real user row with a BCrypt hash of {@link #PASSWORD} and returns its email. */
+    private String createLoginUser(UserStatus status) {
+        ensureAgencyExists(DEFAULT_AGENCY_ID);
+        var email = "login-" + UUID.randomUUID() + "@agency.pl";
+        jdbcTemplate.update(
+                "INSERT INTO users (agency_id, email, password_hash, first_name, last_name, "
+                        + "role, language, status) "
+                        + "VALUES (?, ?, ?, 'Test', 'User', 'AGENCY_ADMIN', 'EN', ?)",
+                DEFAULT_AGENCY_ID, email, passwordEncoder.encode(PASSWORD), status.name());
+        return email;
+    }
+
     @Nested
     class Login {
+
+        @Test
+        void shouldReturnTokens_whenCredentialsAreValid() {
+            var email = createLoginUser(UserStatus.ACTIVE);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            var body = response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.accessToken()).isNotBlank();
+            assertThat(body.refreshToken()).isNotBlank();
+            assertThat(body.expiresIn()).isPositive();
+            assertThat(body.user().email()).isEqualTo(email);
+            assertThat(body.user().role()).isEqualTo(Role.AGENCY_ADMIN.name());
+            assertThat(jwtTokenProvider.getAgencyId(body.accessToken())).isEqualTo(DEFAULT_AGENCY_ID);
+            assertThat(jwtTokenProvider.isRefreshToken(body.refreshToken())).isTrue();
+
+            var lastLoginAt = jdbcTemplate.queryForObject(
+                    "SELECT last_login_at FROM users WHERE email = ?", Object.class, email);
+            assertThat(lastLoginAt).isNotNull();
+        }
+
+        @Test
+        void shouldReturnUnauthorized_whenPasswordIsWrong() {
+            var email = createLoginUser(UserStatus.ACTIVE);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, "not-the-password"), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("error.auth.invalid_credentials");
+        }
+
+        @Test
+        void shouldReturnUnauthorized_whenUserIsInactive() {
+            // Deactivation is the only revocation lever the product offers. Without this check a
+            // dismissed employee kept logging in with their old password indefinitely, because no
+            // authentication path ever consulted users.status.
+            var email = createLoginUser(UserStatus.INACTIVE);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            // Same code as a wrong password: an inactive account must not be distinguishable.
+            assertThat(response.getBody()).contains("error.auth.invalid_credentials");
+        }
 
         @Test
         void shouldReturnUnauthorized_whenUserDoesNotExist() {
@@ -43,6 +116,96 @@ class AuthIntegrationTest extends IntegrationTestBase {
 
     @Nested
     class Refresh {
+
+        @Test
+        void shouldReturnNewPair_whenRefreshTokenIsValid() {
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var login = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", login.refreshToken()),
+                    AuthResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            var body = response.getBody();
+            assertThat(body.accessToken()).isNotBlank();
+            assertThat(body.refreshToken()).isNotBlank();
+            assertThat(body.user().email()).isEqualTo(email);
+            // The refreshed access token carries the claims a refresh token does not.
+            assertThat(jwtTokenProvider.getAgencyId(body.accessToken())).isEqualTo(DEFAULT_AGENCY_ID);
+        }
+
+        @Test
+        void shouldReturnUnauthorized_whenUserIsInactive() {
+            // A refresh token outlives the access token by a week and mints fresh pairs, so
+            // skipping the status check here would make deactivation ineffective even after
+            // login refuses the user.
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var login = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            jdbcTemplate.update("UPDATE users SET status = 'INACTIVE' WHERE email = ?", email);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", login.refreshToken()),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("error.auth.invalid_refresh_token");
+        }
+
+        /**
+         * Refresh tokens are stateless and live seven days, and nothing was ever compared against
+         * the database -- so a leaked one kept minting fresh pairs for its whole lifetime and the
+         * only lever was rotating JWT_SECRET, which logs out every tenant at once. The token
+         * version is that lever, scoped to one account.
+         */
+        @Test
+        void shouldReturnUnauthorized_whenTokenVersionHasMovedOn() {
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var login = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            jdbcTemplate.update("UPDATE users SET token_version = token_version + 1 WHERE email = ?", email);
+
+            var response = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", login.refreshToken()),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(response.getBody()).contains("error.auth.invalid_refresh_token");
+        }
+
+        @Test
+        void shouldIssueAUsableToken_whenTokenVersionIsUnchanged() {
+            // The version check must not reject ordinary refreshes: the pair handed back by one
+            // refresh has to survive the next one.
+            var email = createLoginUser(UserStatus.ACTIVE);
+            var first = restTemplate.postForEntity(
+                    "/api/v1/auth/login", new LoginRequest(email, PASSWORD), AuthResponse.class
+            ).getBody();
+
+            var second = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", first.refreshToken()), AuthResponse.class
+            ).getBody();
+            var third = restTemplate.postForEntity(
+                    "/api/v1/auth/refresh",
+                    java.util.Map.of("refreshToken", second.refreshToken()), AuthResponse.class
+            );
+
+            assertThat(third.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
 
         @Test
         void shouldReturnUnauthorized_whenRefreshTokenIsInvalid() {

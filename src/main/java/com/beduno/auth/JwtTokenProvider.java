@@ -6,7 +6,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -16,16 +15,34 @@ import java.util.Date;
 import java.util.UUID;
 
 @Component
-@RequiredArgsConstructor
 public class JwtTokenProvider {
 
     /** Stamped on refresh tokens only. Access tokens carry no {@code type} claim at all. */
     public static final String REFRESH_TOKEN_TYPE = "refresh";
 
+    /**
+     * The user's token generation, carried on refresh tokens. Bumping {@code users.token_version}
+     * invalidates every refresh token issued before the bump.
+     */
+    public static final String TOKEN_VERSION_CLAIM = "tv";
+
     private final JwtConfig jwtConfig;
 
+    /**
+     * Derived once, in the constructor rather than a @PostConstruct so that direct construction
+     * works the same as injection. It used to be rebuilt from the secret string on every call,
+     * and every request made three of those calls: validateToken, isRefreshToken and parseToken
+     * each re-derived the key and re-verified the HMAC over the same token.
+     */
+    private final SecretKey signingKey;
+
+    public JwtTokenProvider(JwtConfig jwtConfig) {
+        this.jwtConfig = jwtConfig;
+        this.signingKey = Keys.hmacShaKeyFor(jwtConfig.getSecret().getBytes(StandardCharsets.UTF_8));
+    }
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtConfig.getSecret().getBytes(StandardCharsets.UTF_8));
+        return signingKey;
     }
 
     public String generateAccessToken(User user) {
@@ -55,6 +72,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("type", REFRESH_TOKEN_TYPE)
+                .claim(TOKEN_VERSION_CLAIM, user.getTokenVersion())
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(getSigningKey())
@@ -98,6 +116,16 @@ public class JwtTokenProvider {
 
     public UUID getAgencyId(String token) {
         return UUID.fromString(parseToken(token).get("agencyId", String.class));
+    }
+
+    /**
+     * The token generation a refresh token was minted under, or 0 for tokens issued before the
+     * claim existed -- which matches the column default, so those keep working until the user's
+     * version is bumped for the first time.
+     */
+    public int getTokenVersion(Claims claims) {
+        var version = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
+        return version != null ? version : 0;
     }
 
     public long getAccessTokenExpirationSeconds() {

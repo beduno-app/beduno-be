@@ -157,6 +157,7 @@ inspection is meant to be audit evidence, this does not deliver it.
 No `UserController`, no `AgencyController`. Users can only be created by SQL. Every
 doc that says "Agency Admin manages users" describes something unbuilt. Nothing else
 in the MVP works without users existing, so this is a real onboarding gap.
+> **Resolved** `UserController` exists with GET/POST/PUT/DELETE, admin-only. `AgencyController` still does not; agencies are created by the bootstrap runner only.
 
 **Q7 — Should properties and rooms be soft-deleted?**
 They are hard-deleted, now behind a 409 guard. Because the guard counts *terminal*
@@ -168,12 +169,14 @@ archive.
 `StayService.bulkAssign` catches the exception and stores `e.getMessage()` — a bare
 message code string. The per-item violation `details` (room, capacity, params) are
 lost, so a UI cannot explain *why* an assignment failed.
+> **Resolved** (partly, 2026-09-14) The per-item code is now `BusinessException.getMessageCode()` rather than `e.getMessage()`, so it no longer leaks raw SQL text. The structured `details` are still dropped — a UI can say which rule failed but not with which numbers.
 
 **Q9 — Sort keys are inconsistent between endpoints.**
 Workers, properties and stays use native queries, so `?sort=` takes snake_case
 column names (`last_name`, `date_from`). Rooms uses a derived JPA query, so it takes
 the entity property (`name`). An unknown key reaches Postgres and 500s rather than
 400s. Either move to JPQL/Specification or whitelist sort keys.
+> **Resolved** `SortFields.translate` whitelists camelCase keys per endpoint and returns 400 for anything else; covered by `WorkerSortIntegrationTest` and `RoomSortIntegrationTest`.
 
 **Q10 — Bean-validation errors break the message-code rule.**
 Every other error returns a message *code*. `MethodArgumentNotValidException` returns
@@ -212,13 +215,16 @@ the catch-all. A missing required query parameter (`GET /stays/arrivals` with no
 `propertyId`), an unparseable UUID, date or enum, malformed JSON, or an empty body
 all return 500 instead of 400. This is probably the highest-volume correctness bug
 in the codebase — every malformed client request is misreported.
+> **Resolved** `GlobalExceptionHandler` extends `ResponseEntityExceptionHandler`; `ErrorContractIntegrationTest` pins 400/405/415. `DataIntegrityViolationException` and `ObjectOptimisticLockingFailureException` were added to the same treatment on 2026-09-14 (409).
 
 **Q17 — `roomId` is never checked against `propertyId`.**
 Stay create, stay update, the check-in room override and move all resolve the room
 by agency only (`getRoomOrThrow`). A room belonging to a different property is
 accepted, and the stay keeps its original, now-wrong `propertyId`.
+> **Resolved** (2026-09-14) Every stay write path resolves the room through `findByIdAndAgencyIdAndPropertyId`; a mismatch is 404 `error.room.not_found`.
 
 **Q18 — No `dateTo > dateFrom` validation at the DTO layer.**
+> **Resolved** (2026-09-14) `@AssertTrue` on create, update and each bulk assignment; check-out rejects an `actualDateTo` that is not after the arrival date.
 `CreateStayRequest`, `UpdateStayRequest` and `CheckOutRequest.actualDateTo` are
 unvalidated, so an inverted range reaches the `chk_stays_dates` CHECK and returns
 500 rather than 400.
@@ -228,6 +234,7 @@ unvalidated, so an inverted range reaches the `chk_stays_dates` CHECK and return
 `var previous = snapshot(stay)`. When a check-in overrides the room, the "previous
 state" already contains the new room, so the original assignment is lost from the
 audit trail — precisely the fact an inspection would need.
+> **Resolved** (2026-09-14) The snapshot is taken before any mutation, and `AuditIntegrationTest.shouldRecordPlannedRoom_whenCheckInOverridesTheRoom` pins it.
 
 **Q20 — Move leaves the original stay's `dateTo` untouched.**
 The closed stay keeps its original end date while the replacement runs from today,
@@ -235,6 +242,7 @@ so the two overlap in any date-range query. The replacement also drops the
 original's `notes` and never persists the caller's `overrideReason`.
 
 **Q21 — Bulk operations can report partial success and then roll back entirely.**
+> **Resolved** (2026-09-14) Only `BusinessException` is caught per item, and those are thrown before anything is written; each insert is flushed where it belongs, so the item blamed is the item at fault. A database-level failure now propagates and rolls the batch back with a proper error instead of returning 500 alongside a list of creations that never happened.
 `bulkAssign` and `bulkCheckout` catch per-item exceptions inside a single
 `@Transactional` method. Any JPA exception marks the transaction rollback-only, so
 a response saying "3 created, 1 error" can still fail wholesale at commit. The
@@ -244,6 +252,7 @@ anything that is not a `BusinessException`.
 **Q22 — Occupancy endpoints do not verify the property exists.**
 `occupancy`, `exceptions`, `inspection` and the three exports return an empty array
 or a header-only CSV for an unknown or foreign `propertyId`, instead of 404.
+> **Resolved** (2026-09-14) All four verify existence first and return 404; they then check property scope, in that order, so the difference between 403 and 404 cannot be used to probe which properties exist.
 
 **Q23 — `PUT /workers/{id}` can set `status: DELETED` without `deletedAt`.**
 That produces a state the `DELETE` endpoint would never create, and read filters
@@ -257,6 +266,7 @@ Probably intended, but it means a worker with `OTHER` can only be placed in an
 
 **Q26 — Dead code.** `WorkerSummary` and `StaySummary` and their mapper methods are
 returned by no endpoint. `StayService.toStringMap` returns its argument unchanged.
+> **Resolved** (2026-09-14) All three deleted.
 
 **Q27 — `Agency.status` and `User.status` are raw `String`s** while every other
 status field in the domain is an `@Enumerated` enum.

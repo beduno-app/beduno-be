@@ -13,6 +13,13 @@ public interface BedRepository extends JpaRepository<Bed, UUID> {
 
     List<Bed> findAllByAgencyIdAndRoomIdIn(UUID agencyId, Collection<UUID> roomIds);
 
+    /**
+     * Batch lookup by id, scoped to the tenant. The alternative -- {@code findAllById} -- is
+     * unscoped, and whether it is safe depends entirely on where the caller's ids came from; that
+     * is not a property a future reader can see at the call site.
+     */
+    List<Bed> findAllByAgencyIdAndIdIn(UUID agencyId, Collection<UUID> ids);
+
     Optional<Bed> findByIdAndAgencyId(UUID id, UUID agencyId);
 
     Optional<Bed> findByIdAndAgencyIdAndRoomId(UUID id, UUID agencyId, UUID roomId);

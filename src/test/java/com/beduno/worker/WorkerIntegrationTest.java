@@ -116,10 +116,15 @@ class WorkerIntegrationTest extends IntegrationTestBase {
     @Nested
     class TenantIsolation {
 
+        /**
+         * Asserts the absence, not just the presence. Without the doesNotContain, this test passes
+         * unchanged if findAllByAgencyIdWithFilters loses its agency_id predicate -- which is the
+         * one failure it exists to catch.
+         */
         @Test
         void shouldNotReturnWorkersFromOtherAgency() {
-            createWorker(DEFAULT_AGENCY_ID);
-            createWorker(OTHER_AGENCY_ID);
+            var defaultAgencyWorker = createWorker(DEFAULT_AGENCY_ID);
+            var otherAgencyWorker = createWorker(OTHER_AGENCY_ID);
 
             var headers = authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
             var response = restTemplate.exchange(
@@ -127,12 +132,13 @@ class WorkerIntegrationTest extends IntegrationTestBase {
                     new HttpEntity<>(headers),
                     new ParameterizedTypeReference<PageResponse<WorkerResponse>>() {}
             );
+
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-            // All returned workers should belong to OTHER_AGENCY_ID
-            var body = response.getBody();
-            assertThat(body).isNotNull();
-            // Workers created for DEFAULT_AGENCY_ID should not appear
-            // We can verify by checking no worker from the default agency is returned
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().content())
+                    .extracting(WorkerResponse::id)
+                    .contains(otherAgencyWorker.id())
+                    .doesNotContain(defaultAgencyWorker.id());
         }
 
         @Test

@@ -1,6 +1,7 @@
 package com.beduno.config;
 
 import com.beduno.common.security.RateLimitFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import com.beduno.common.security.RestAccessDeniedHandler;
 import com.beduno.common.security.RestAuthenticationEntryPoint;
 import com.beduno.common.security.TenantFilter;
@@ -8,9 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -76,8 +75,25 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Both filters are {@code @Component}s and are also placed in the chain above, so Boot's
+     * servlet-container auto-registration adds each of them a second time as a plain servlet
+     * filter -- once outside the security chain, where the principal is not yet set. They extend
+     * {@code OncePerRequestFilter}, which masks the effect, but the duplicate registration is
+     * still there and the masking is incidental. These turn it off.
+     */
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
+    public FilterRegistrationBean<TenantFilter> tenantFilterRegistration(TenantFilter filter) {
+        var registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
+
+    @Bean
+    public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
+        var registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
 }

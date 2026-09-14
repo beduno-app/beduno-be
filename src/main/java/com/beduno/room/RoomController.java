@@ -1,12 +1,10 @@
 package com.beduno.room;
 
-import com.beduno.common.exception.ForbiddenException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.room.dto.CreateRoomRequest;
 import com.beduno.room.dto.RoomResponse;
 import com.beduno.room.dto.UpdateRoomRequest;
-import com.beduno.user.Role;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -62,7 +60,7 @@ public class RoomController {
     public ResponseEntity<RoomResponse> create(@PathVariable UUID propertyId,
                                                 @Valid @RequestBody CreateRoomRequest request,
                                                 @AuthenticationPrincipal CurrentUser currentUser) {
-        checkPropertyAccess(currentUser, propertyId);
+        currentUser.requirePropertyAccess(propertyId);
         return ResponseEntity.status(HttpStatus.CREATED).body(roomService.create(propertyId, request));
     }
 
@@ -73,7 +71,7 @@ public class RoomController {
                                                 @PathVariable UUID roomId,
                                                 @Valid @RequestBody UpdateRoomRequest request,
                                                 @AuthenticationPrincipal CurrentUser currentUser) {
-        checkPropertyAccess(currentUser, propertyId);
+        currentUser.requirePropertyAccess(propertyId);
         return ResponseEntity.ok(roomService.update(propertyId, roomId, request));
     }
 
@@ -89,9 +87,4 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
-    private void checkPropertyAccess(CurrentUser currentUser, UUID propertyId) {
-        if (currentUser.role() == Role.PROPERTY_ADMIN && !currentUser.hasPropertyAccess(propertyId)) {
-            throw new ForbiddenException("error.property.access_denied");
-        }
-    }
 }

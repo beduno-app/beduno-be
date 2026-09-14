@@ -1,7 +1,8 @@
 # Beduno Backend - Architecture
 
-> Reconciled against the implementation on 2026-09-11. Everything below was verified against
-> `src/main/java/com/beduno/**`, `src/main/resources/db/migration/V1..V14`, `application*.yml`,
+> Reconciled against the implementation on 2026-09-14, following the code review in
+> `docs/code-review-2026-09-14.md`. Everything below was verified against
+> `src/main/java/com/beduno/**`, `src/main/resources/db/migration/V1..V16`, `application*.yml`,
 > `logback-spring.xml`, `build.gradle.kts`, and `docker/`.
 
 ## Technology Stack
@@ -9,7 +10,7 @@
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
 | Language | Java 21 | LTS, virtual threads, pattern matching, records |
-| Framework | Spring Boot 3.4 | Mature ecosystem, security, i18n, actuator |
+| Framework | Spring Boot 3.5 | Mature ecosystem, security, i18n, actuator |
 | Build | Gradle (Kotlin DSL) | Faster builds, better dependency management |
 | Database | PostgreSQL 16 | JSONB for flexible fields, row-level security, mature |
 | Migrations | Flyway | Version-controlled schema migrations |
@@ -85,7 +86,7 @@ beduno-be/
 │   │   │   │       ├── LoginRequest.java
 │   │   │   │       └── RefreshRequest.java
 │   │   │   ├── user/
-│   │   │   │   ├── Role.java                 # entity + repo only; no user CRUD API yet
+│   │   │   │   ├── Role.java
 │   │   │   │   ├── User.java
 │   │   │   │   └── UserRepository.java
 │   │   │   ├── worker/
@@ -313,10 +314,10 @@ properties (
 )   -- no `type`, no property-level gender rule
 
 rooms (
-    id, agency_id, property_id, name, floor,
-    gender_rule VARCHAR(20) NOT NULL DEFAULT 'ANY',   -- ANY | MALE_ONLY | FEMALE_ONLY
+    id, agency_id, property_id, room_number, floor INT,     -- renamed from `name` in V9
+    gender_rule VARCHAR(20) NOT NULL DEFAULT 'MIXED',       -- MIXED | MALE_ONLY | FEMALE_ONLY
     status DEFAULT 'ACTIVE', notes,
-    UNIQUE (property_id, name)                          -- uq_rooms_property_name
+    UNIQUE (property_id, room_number)                       -- uq_rooms_property_room_number
 )   -- capacity/blocked_spots dropped in V13; occupancy is now derived from beds
 
 beds (
@@ -329,7 +330,7 @@ beds (
 stays (
     id, agency_id, worker_id, property_id, room_id,
     bed_id NOT NULL,                      -- V11 (nullable) -> V14 (NOT NULL, once every write path guarantees a value)
-    bed_auto_assigned BOOLEAN NOT NULL DEFAULT false,
+    bed_auto_assigned BOOLEAN NOT NULL DEFAULT true,   -- V11
     date_from DATE NOT NULL, date_to DATE,
     status DEFAULT 'PLANNED',
     override_reason,          -- set when a soft constraint was overridden
@@ -371,9 +372,14 @@ non-cascading, so referenced rows cannot be deleted — see "Deletion guards" be
 
 | Location | Why |
 |----------|-----|
-| `StayRepository.findPlannedArrivingOn` | Deliberately cross-tenant — backs the nightly scheduler sweep, which runs outside any request and so has no tenant context |
-| `OccupancyService.loadWorkers` | Uses `workerRepository.findAllById(...)` with no tenant predicate (its `agencyId` parameter is unused). Safe today only because the IDs come from stays already filtered by tenant |
-| `UserRepository.findByEmail` | Login happens before a tenant is known, so the lookup is by email across all agencies |
+| `StayRepository.findPlannedArrivingOnOrBefore` | Deliberately cross-tenant — backs the arrival sweep, which runs outside any request (on the scheduler and once at startup) and so has no tenant context |
+| `UserRepository.findByEmail` / `existsByEmail` / `existsByEmailAndIdNot` | Login happens before a tenant is known, so the lookup is by email across all agencies; `uq_users_email` is global for the same reason (V8) |
+| `RoomRepository.existsByPropertyIdAndRoomNumber`, `BedRepository.existsByRoomIdAndLabel` | Uniqueness checks keyed on a parent id that is itself agency-scoped |
+| `BootstrapRunner` | Runs at startup, before any tenant exists, to ask whether the users table is empty |
+
+`OccupancyService.loadWorkers` was on this list until 2026-09-14; it and `ExportService` now use
+scoped batch lookups (`findAllByAgencyIdAndIdIn`). Prefer those over `findAllById`, whose safety
+depends on where the caller's ids came from and is therefore invisible at the call site.
 
 Row-Level Security remains a candidate defence-in-depth layer; it is not implemented.
 If tenant isolation requirements grow, migrate to schema-per-tenant.
@@ -388,11 +394,14 @@ If tenant isolation requirements grow, migrate to schema-per-tenant.
    installs a `CurrentUser` principal with a `ROLE_<role>` authority
 4. `@PreAuthorize` on controller methods enforces role checks
    (`AGENCY_ADMIN`, `AGENCY_PLANNER`, `PROPERTY_ADMIN`, `FRONT_DESK`)
-5. **Per-property scoping is partial.** `CurrentUser.hasPropertyAccess(...)` is called in exactly
-   two places: `PropertyController.update` and `RoomController.checkPropertyAccess`
-   (room create/update). Stays, occupancy, exceptions, inspection, and CSV exports are
-   **agency-wide** — any authenticated user with the right role may act on any property in their
-   agency. The service layer performs no property scoping at all.
+5. **Per-property scoping is enforced.** `PROPERTY_ADMIN` and `FRONT_DESK` are limited to their
+   `assignedPropertyIds`; `AGENCY_ADMIN` and `AGENCY_PLANNER` are agency-wide. The check is
+   `SecurityUtils.requirePropertyAccess(...)`, and it sits at each path's single funnel rather
+   than at every call site: `StayService.getStayOrThrow` (which every single-stay operation
+   resolves through), the property-existence check the four `OccupancyService` methods share, and
+   the create/bulk-assign entry points. Property, room and bed controllers call
+   `CurrentUser.requirePropertyAccess` directly. Acting outside the list is
+   `403 error.property.access_denied`; a cross-*agency* id stays `404`.
 
 ### Error semantics
 - Unauthenticated request to a protected endpoint -> **401** with the standard `ErrorResponse`
@@ -487,19 +496,22 @@ deletes with 409 rather than letting the database fail with a 500:
   references it (`error.property.has_stays`); otherwise it is a **hard** delete
 - Room delete -> 409 if any stay references it (`error.room.has_stays`) or it still has beds
   (`error.room.has_beds`, `beds.room_id` is a RESTRICT FK); otherwise hard delete
-- Bed delete -> hard delete; no guard against stays referencing it, since `stays.bed_id` is
-  `NOT NULL` (V14) and every stay-write path re-resolves a bed through `StayService.resolveBed`
+- Bed delete -> 409 if any stay references it (`error.bed.has_stays`, `stays.bed_id` is a
+  RESTRICT FK); otherwise hard delete
 - Worker delete -> **soft**: `status = DELETED` plus `deleted_at`; every worker query excludes
-  `DELETED`
+  `DELETED`. Guarded by a 409 (`error.worker.has_active_stays`) while the worker has a PLANNED,
+  EXPECTED_TODAY or CHECKED_IN stay: no foreign key stops a soft delete, so without the guard the
+  stays stayed active, held their bed, and could not be repaired because every stay path that
+  loads the worker then returns 404
 - Stay "delete" is a cancel: `status = CANCELLED`
 
 ## Audit Trail
 
-State changes on Stay, Worker, Room and Property produce an `AuditEvent`
-(`AuditEntityType` = STAY | WORKER | ROOM | PROPERTY):
+State changes produce an `AuditEvent`
+(`AuditEntityType` = STAY | WORKER | ROOM | PROPERTY | BED | USER):
 
-- Written by **explicit `auditService.log(...)` calls** at ~20 call sites in `StayService`,
-  `WorkerService`, `RoomService` and `PropertyService`. There is no `AuditAspect` and no AOP
+- Written by **explicit `auditService.log(...)` calls** in `StayService`, `WorkerService`,
+  `RoomService`, `PropertyService`, `BedService` and `UserService`. There is no `AuditAspect` and no AOP
   anywhere in the codebase — a new write path must remember to log for itself.
 - Actions recorded: `CREATED`, `UPDATED`, `DELETED`, `CHECKED_IN`, `CHECKED_OUT`, `NO_SHOW`,
   `CANCELLED`, `MOVED`, `BULK_ASSIGNED`, `BULK_CHECKED_OUT`
@@ -566,7 +578,9 @@ One `t4g.small` EC2 instance in `eu-central-1` running three containers under do
   `server.forward-headers-strategy: native` is what makes `getRemoteAddr()` the real client
   behind it, which the login throttle and HSTS both depend on
 - The first agency and administrator are created at startup from `BOOTSTRAP_*` on an empty
-  database; there is no user-management API (Q6)
+  database. Every endpoint needs an authenticated caller, so this is the only way in on a fresh
+  deployment; further accounts are created through `/api/v1/users` and the `BOOTSTRAP_*`
+  parameters should be deleted afterwards (they are re-read on every boot)
 - `prod` logging emits one structured line per event including `rid`/`uid`/`aid` from the MDC
 - Stateless backend (JWT) allows horizontal scaling, though this deployment is deliberately a
   single instance. The scheduler and the in-memory rate-limit buckets are per-instance and are

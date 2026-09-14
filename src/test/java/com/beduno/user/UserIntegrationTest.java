@@ -60,6 +60,28 @@ class UserIntegrationTest extends IntegrationTestBase {
         }
 
         @Test
+        void shouldReturnBadRequest_whenLanguageIsMissing() {
+            // language was optional on the DTO but NOT NULL on the column, and MapStruct writes
+            // it unconditionally -- so omitting it overwrote the entity default with null and the
+            // insert failed as a 500 rather than a field error.
+            var body = new java.util.HashMap<String, Object>();
+            body.put("email", uniqueEmail());
+            body.put("password", "supersecretpassword123");
+            body.put("firstName", "Test");
+            body.put("lastName", "User");
+            body.put("role", Role.FRONT_DESK.name());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/users", HttpMethod.POST,
+                    new HttpEntity<>(body, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("VALIDATION_ERROR");
+        }
+
+        @Test
         void shouldRejectDuplicateEmail() {
             var email = uniqueEmail();
             createUser(DEFAULT_AGENCY_ID, email, Role.FRONT_DESK);
@@ -157,6 +179,52 @@ class UserIntegrationTest extends IntegrationTestBase {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().firstName()).isEqualTo("Updated");
             assertThat(response.getBody().role()).isEqualTo(Role.PROPERTY_ADMIN);
+        }
+
+        @Test
+        void shouldRejectSelfDeactivation_whenStatusSetToInactiveViaUpdate() {
+            // deactivate() refuses to deactivate the caller, but update() accepted
+            // status=INACTIVE on the caller's own record -- a way around the guard that locks
+            // the admin out of their own agency the moment SEC-01 makes status count.
+            var agencyId = UUID.randomUUID();
+            ensureAgencyExists(agencyId);
+            var self = createUser(agencyId, uniqueEmail(), Role.AGENCY_ADMIN);
+            // A second active admin, so a failure here cannot be the last-admin guard instead.
+            createUser(agencyId, uniqueEmail(), Role.AGENCY_ADMIN);
+
+            var request = new UpdateUserRequest(
+                    self.email(), self.firstName(), self.lastName(), Role.AGENCY_ADMIN,
+                    "EN", List.of(), UserStatus.INACTIVE
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/users/" + self.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeadersForAgencyUser(Role.AGENCY_ADMIN, agencyId, self.id())),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).contains("error.user.cannot_deactivate_self");
+        }
+
+        @Test
+        void shouldDeactivateOtherUser_whenStatusSetToInactiveViaUpdate() {
+            var agencyId = UUID.randomUUID();
+            ensureAgencyExists(agencyId);
+            var self = createUser(agencyId, uniqueEmail(), Role.AGENCY_ADMIN);
+            var target = createUser(agencyId, uniqueEmail(), Role.FRONT_DESK);
+
+            var request = new UpdateUserRequest(
+                    target.email(), target.firstName(), target.lastName(), Role.FRONT_DESK,
+                    "EN", List.of(), UserStatus.INACTIVE
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/users/" + target.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeadersForAgencyUser(Role.AGENCY_ADMIN, agencyId, self.id())),
+                    UserResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().status()).isEqualTo(UserStatus.INACTIVE);
         }
 
         @Test

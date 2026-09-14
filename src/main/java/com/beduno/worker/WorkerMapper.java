@@ -3,7 +3,6 @@ package com.beduno.worker;
 import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.UpdateWorkerRequest;
 import com.beduno.worker.dto.WorkerResponse;
-import com.beduno.worker.dto.WorkerSummary;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -35,7 +34,6 @@ public interface WorkerMapper {
     @Mapping(target = "tags", expression = "java(toList(worker.getTags()))")
     WorkerResponse toResponse(Worker worker);
 
-    WorkerSummary toSummary(Worker worker);
 
     default String[] toArray(List<String> list) {
         return list != null ? list.toArray(String[]::new) : new String[0];

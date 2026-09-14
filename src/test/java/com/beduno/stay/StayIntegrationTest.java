@@ -68,6 +68,69 @@ class StayIntegrationTest extends IntegrationTestBase {
             assertThat(response.getBody().roomId()).isEqualTo(room.id());
         }
 
+        /**
+         * Dates were never validated in the application: the chk_stays_dates CHECK was the only
+         * guard and reaching it produced a 500 with a stack trace, not a field error.
+         */
+        @Test
+        void shouldRejectCreate_whenRoomBelongsToOtherProperty() {
+            // propertyId came from the request and roomId was resolved by agency only, so the two
+            // never had to agree. The resulting stay is absent from every occupancy view.
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var otherProperty = createProperty(DEFAULT_AGENCY_ID);
+            var foreignRoom = createRoom(DEFAULT_AGENCY_ID, otherProperty.id(), 4, 0, GenderRule.MIXED);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), foreignRoom.id(), null,
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8), null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).contains("error.room.not_found");
+        }
+
+        @Test
+        void shouldReturnBadRequest_whenDateToEqualsDateFrom() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var date = LocalDate.now().plusDays(1);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), room.id(), null, date, date, null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("error.stay.invalid_dates");
+        }
+
+        @Test
+        void shouldReturnBadRequest_whenDateToBeforeDateFrom() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var request = new CreateStayRequest(
+                    worker.id(), property.id(), room.id(), null,
+                    LocalDate.now().plusDays(8), LocalDate.now().plusDays(1), null, null
+            );
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
         @Test
         void shouldRejectCreate_whenFrontDesk() {
             var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
@@ -196,7 +259,7 @@ class StayIntegrationTest extends IntegrationTestBase {
 
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id(), HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
@@ -250,6 +313,53 @@ class StayIntegrationTest extends IntegrationTestBase {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().dateFrom()).isEqualTo(newDateFrom);
+        }
+
+        /**
+         * EXPECTED_TODAY is only meaningful while dateFrom is today or earlier. Postponing an
+         * arrival used to leave the status untouched, so the stay could still be checked in today
+         * and appeared as a phantom arrival for the whole intervening week.
+         */
+        @Test
+        void shouldRevertToPlanned_whenExpectedTodayStayIsPostponed() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var stay = createStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now(), LocalDate.now().plusDays(7), null);
+            assertThat(stay.status()).isEqualTo(StayStatus.EXPECTED_TODAY);
+
+            var request = new UpdateStayRequest(room.id(), null,
+                    LocalDate.now().plusDays(7), LocalDate.now().plusDays(14), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().status()).isEqualTo(StayStatus.PLANNED);
+        }
+
+        @Test
+        void shouldPromoteToExpectedToday_whenPlannedStayIsBroughtForwardToToday() {
+            var worker = createWorker(DEFAULT_AGENCY_ID, Gender.MALE);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+
+            var stay = createStay(worker.id(), property.id(), room.id(),
+                    LocalDate.now().plusDays(10), LocalDate.now().plusDays(17), null);
+            assertThat(stay.status()).isEqualTo(StayStatus.PLANNED);
+
+            var request = new UpdateStayRequest(room.id(), null,
+                    LocalDate.now(), LocalDate.now().plusDays(7), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays/" + stay.id(), HttpMethod.PUT,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN)), StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().status()).isEqualTo(StayStatus.EXPECTED_TODAY);
         }
 
         @Test
@@ -330,6 +440,92 @@ class StayIntegrationTest extends IntegrationTestBase {
                     StayResponse.class
             );
             assertThat(getResponse.getBody().status()).isEqualTo(StayStatus.CANCELLED);
+        }
+    }
+
+    /**
+     * findAllWithFilters has five optional predicates and only workerId was exercised. The
+     * date-overlap pair -- {@code date_to IS NULL OR date_to >= :dateFrom} and {@code date_from <=
+     * :dateTo} -- is the one most likely to be off by one, and its null-date branch is the only
+     * thing keeping open-ended stays in a windowed list.
+     */
+    @Nested
+    class ListFilters {
+
+        @Test
+        void shouldFilterByStatus() {
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var planned = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+            var cancelled = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), LocalDate.now().plusDays(60), LocalDate.now().plusDays(67), null);
+            restTemplate.exchange("/api/v1/stays/" + cancelled.id(), HttpMethod.DELETE,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), Void.class);
+
+            var ids = listStayIds("?status=PLANNED&size=200");
+
+            assertThat(ids).contains(planned.id()).doesNotContain(cancelled.id());
+        }
+
+        @Test
+        void shouldFilterByProperty() {
+            var propertyA = createProperty(DEFAULT_AGENCY_ID);
+            var propertyB = createProperty(DEFAULT_AGENCY_ID);
+            var roomA = createRoom(DEFAULT_AGENCY_ID, propertyA.id(), 4, 0, GenderRule.MIXED);
+            var roomB = createRoom(DEFAULT_AGENCY_ID, propertyB.id(), 4, 0, GenderRule.MIXED);
+            var atA = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), propertyA.id(),
+                    roomA.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+            var atB = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), propertyB.id(),
+                    roomB.id(), LocalDate.now().plusDays(30), LocalDate.now().plusDays(37), null);
+
+            var ids = listStayIds("?propertyId=" + propertyA.id() + "&size=200");
+
+            assertThat(ids).contains(atA.id()).doesNotContain(atB.id());
+        }
+
+        @Test
+        void shouldReturnOnlyStaysOverlappingTheRequestedWindow() {
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var base = LocalDate.now().plusDays(100);
+            var inside = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.plusDays(2), base.plusDays(5), null);
+            var before = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.minusDays(20), base.minusDays(10), null);
+            var after = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base.plusDays(30), base.plusDays(40), null);
+
+            var ids = listStayIds("?propertyId=" + property.id()
+                    + "&dateFrom=" + base + "&dateTo=" + base.plusDays(7) + "&size=200");
+
+            assertThat(ids).contains(inside.id()).doesNotContain(before.id(), after.id());
+        }
+
+        @Test
+        void shouldIncludeOpenEndedStays_whenFilteringByWindow() {
+            // The null-date branch: an open-ended stay has no dateTo, so it must be matched by the
+            // "date_to IS NULL" half or it disappears from every windowed list.
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 4, 0, GenderRule.MIXED);
+            var base = LocalDate.now().plusDays(200);
+            var openEnded = createStay(createWorker(DEFAULT_AGENCY_ID, Gender.MALE).id(), property.id(),
+                    room.id(), base, null, null);
+
+            var ids = listStayIds("?propertyId=" + property.id()
+                    + "&dateFrom=" + base.plusDays(365) + "&dateTo=" + base.plusDays(400) + "&size=200");
+
+            assertThat(ids).contains(openEnded.id());
+        }
+
+        private List<UUID> listStayIds(String query) {
+            var response = restTemplate.exchange(
+                    "/api/v1/stays" + query, HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<PageResponse<StayResponse>>() {}
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            return response.getBody().content().stream().map(StayResponse::id).toList();
         }
     }
 

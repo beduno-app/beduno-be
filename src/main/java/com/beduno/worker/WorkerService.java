@@ -6,9 +6,12 @@ import com.beduno.audit.AuditEntityType;
 import com.beduno.audit.AuditService;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
+import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
+import com.beduno.stay.StayRepository;
+import com.beduno.stay.StayStatus;
 import com.beduno.worker.dto.CreateWorkerRequest;
 import com.beduno.worker.dto.UpdateWorkerRequest;
 import com.beduno.worker.dto.WorkerImportResult;
@@ -17,16 +20,17 @@ import com.beduno.worker.dto.WorkerResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -53,9 +57,21 @@ public class WorkerService {
             "createdAt", "created_at",
             "updatedAt", "updated_at");
 
+    /**
+     * Column widths from V3__create_workers.sql, indexed as the import file orders them:
+     * internalId, firstName, lastName, gender, nationality, phone, email, dateOfBirth, tags, notes.
+     * A value of -1 means the column is unbounded (text) or validated another way.
+     */
+    private static final int[] CSV_MAX_LENGTHS = {100, 100, 100, 10, 100, 50, 255, -1, -1, -1};
+
+    /** The statuses in which a stay still reserves a bed, so the worker cannot be removed. */
+    private static final List<StayStatus> ACTIVE_STAY_STATUSES = List.of(
+            StayStatus.PLANNED, StayStatus.EXPECTED_TODAY, StayStatus.CHECKED_IN);
+
     private final WorkerRepository workerRepository;
     private final WorkerMapper workerMapper;
     private final AuditService auditService;
+    private final StayRepository stayRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<WorkerResponse> findAll(WorkerStatus status, Gender gender, String tag, String search, Pageable pageable) {
@@ -94,7 +110,7 @@ public class WorkerService {
         var worker = workerMapper.toEntity(request);
         worker.setAgencyId(agencyId);
         worker = workerRepository.save(worker);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.CREATED, null, snapshot(worker), null);
         return workerMapper.toResponse(worker);
     }
@@ -105,26 +121,42 @@ public class WorkerService {
         var previous = snapshot(worker);
         workerMapper.updateEntity(request, worker);
         worker = workerRepository.save(worker);
-        auditService.log(worker.getAgencyId(), currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(worker.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.UPDATED, previous, snapshot(worker), null);
         return workerMapper.toResponse(worker);
     }
 
+    /**
+     * Soft delete, guarded by the worker's active stays.
+     *
+     * <p>Flipping the status alone left those stays fully active: they still occupied their beds
+     * for the constraint engine, so the bed stayed reserved and auto-assign skipped it forever,
+     * while every stay operation that loads the worker -- update, check-in, move -- began failing
+     * with "worker not found". The stay could be neither used nor fixed, and nothing told the
+     * admin any of it.
+     */
     @Transactional
     public void delete(UUID id) {
         var worker = getWorkerOrThrow(id);
+
+        var activeStays = stayRepository.countActiveStaysForWorker(
+                worker.getId(), worker.getAgencyId(), ACTIVE_STAY_STATUSES);
+        if (activeStays > 0) {
+            throw new ConflictException("error.worker.has_active_stays");
+        }
+
         var previous = snapshot(worker);
         worker.setStatus(WorkerStatus.DELETED);
         worker.setDeletedAt(Instant.now());
         workerRepository.save(worker);
-        auditService.log(worker.getAgencyId(), currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(worker.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.DELETED, previous, snapshot(worker), null);
     }
 
     @Transactional
     public WorkerImportResult importCsv(MultipartFile file) {
         var agencyId = TenantContext.requireAgencyId();
-        var actorId = currentUserId();
+        var actorId = SecurityUtils.currentUserId();
         int created = 0;
         int skipped = 0;
         var errors = new ArrayList<WorkerImportError>();
@@ -169,6 +201,17 @@ public class WorkerService {
                         continue;
                     }
 
+                    // Length checks before the insert, not after. The JSON path enforces these
+                    // through Bean Validation; the CSV path enforced none, so an over-long cell
+                    // reached the column -- and because save() defers the INSERT to the next row's
+                    // duplicate check, the failure was attributed to the following row and poisoned
+                    // the transaction, losing the whole import.
+                    var tooLong = firstOverLongField(cols);
+                    if (tooLong != null) {
+                        errors.add(new WorkerImportError(row, internalId, "error.worker.import.field_too_long"));
+                        continue;
+                    }
+
                     if (workerRepository.existsByAgencyIdAndInternalId(agencyId, internalId)) {
                         skipped++;
                         continue;
@@ -194,17 +237,22 @@ public class WorkerService {
                     }
                     worker.setNotes(col(cols, 9));
                     worker.setStatus(WorkerStatus.ACTIVE);
-                    worker = workerRepository.save(worker);
+                    // Flushed here so a rejection belongs to this row rather than to the next one.
+                    worker = workerRepository.saveAndFlush(worker);
                     auditService.log(agencyId, actorId, AuditEntityType.WORKER, worker.getId(),
                             AuditAction.CREATED, null, snapshot(worker), "bulk_import");
                     created++;
-                } catch (Exception e) {
-                    log.warn("Error importing worker at row {}: {}", row, e.getMessage());
+                } catch (DateTimeParseException | IllegalArgumentException e) {
+                    // Only the parse failures a row's own content can cause. The exception message
+                    // is deliberately not logged: it echoes the offending cell, which is worker PII.
+                    log.warn("Error importing worker at row {}: {}", row, e.getClass().getSimpleName());
                     errors.add(new WorkerImportError(row, null, "error.worker.import.row_failed"));
                 }
             }
-        } catch (Exception e) {
-            throw new com.beduno.common.exception.ValidationException("error.worker.import.file_unreadable");
+        } catch (IOException e) {
+            // Narrow: a catch-all here relabelled every unexpected failure, including ones from
+            // rows already processed, as "the file cannot be read".
+            throw new ValidationException("error.worker.import.file_unreadable");
         }
 
         return new WorkerImportResult(created, skipped, errors.size(), List.copyOf(errors));
@@ -233,13 +281,17 @@ public class WorkerService {
         return index < cols.length ? cols[index].strip() : "";
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
+    /** The name of the first CSV column that exceeds its column width, or null if all fit. */
+    private String firstOverLongField(String[] cols) {
+        for (int i = 0; i < CSV_MAX_LENGTHS.length; i++) {
+            var max = CSV_MAX_LENGTHS[i];
+            if (max > 0 && col(cols, i).length() > max) {
+                return "column" + i;
+            }
         }
         return null;
     }
+
 
     private Map<String, Object> snapshot(Worker worker) {
         var map = new LinkedHashMap<String, Object>();

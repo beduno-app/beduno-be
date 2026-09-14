@@ -1,7 +1,7 @@
 plugins {
     java
     checkstyle
-    id("org.springframework.boot") version "3.4.4"
+    id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -69,6 +69,14 @@ checkstyle {
     toolVersion = "10.21.4"
     configFile = file("config/checkstyle/checkstyle.xml")
     isIgnoreFailures = false
+}
+
+tasks.withType<JavaCompile> {
+    // A new entity field that nobody added to the corresponding response record is otherwise a
+    // WARN in a build that prints many, i.e. invisible -- and the field silently never reaches
+    // any client. ERROR makes the omission a compile failure, which is the only way an omission
+    // gets noticed.
+    options.compilerArgs.add("-Amapstruct.unmappedTargetPolicy=ERROR")
 }
 
 tasks.withType<Test> {

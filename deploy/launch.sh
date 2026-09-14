@@ -84,3 +84,14 @@ aws ec2 describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
 echo
 echo "cloud-init still has to install docker, pull images and obtain a certificate (a few minutes)."
 echo "watch it with:  aws ssm start-session --target ${INSTANCE_ID}"
+
+# A fresh deployment has no restore points until someone enables the daily policy: instance.sh
+# stop and publish.sh each take one, but an instance that is never stopped and never rolled has
+# none at all. Say so here rather than leaving it to be discovered when a restore is needed.
+if ! aws dlm get-lifecycle-policies --region "$REGION" \
+      --target-tags "Project=beduno" --query 'Policies[0].PolicyId' --output text 2>/dev/null \
+      | grep -qv '^\(None\|\)$'; then
+  echo
+  echo "WARNING: no daily snapshot policy is tagged Project=beduno, so this deployment has no"
+  echo "         scheduled backups. Enable them:  ${here}/backup.sh enable-daily"
+fi

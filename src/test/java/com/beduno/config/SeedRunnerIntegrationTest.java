@@ -13,11 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,28 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * BootstrapRunnerIntegrationTest}: whether the seed ran is entirely about what rows already exist,
  * which a mocked repository can't tell you.
  *
- * <p>Its own container for the same reason as that class: these tests empty the schema between
- * cases, which the shared container in {@code IntegrationTestBase} cannot afford.
+ * <p>Shares {@link RunnerTestBase}'s database with that class: these tests empty the schema
+ * between cases, which the shared container in {@code IntegrationTestBase} cannot afford.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class SeedRunnerIntegrationTest {
+class SeedRunnerIntegrationTest extends RunnerTestBase {
 
-    static final PostgreSQLContainer<?> postgres;
 
-    static {
-        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-        postgres.start();
-    }
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("beduno.jwt.secret", () -> "test-secret-key-that-is-at-least-256-bits-long-for-hs256");
-        // Off at startup so each test drives the runner itself.
-        registry.add("beduno.seed.enabled", () -> "false");
-    }
 
     @Autowired
     private SeedRunner runner;

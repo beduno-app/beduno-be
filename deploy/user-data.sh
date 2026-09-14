@@ -4,6 +4,9 @@
 set -euxo pipefail
 
 COMPOSE_VERSION=v2.32.4
+# Published at ${release}/docker-compose-linux-aarch64.sha256. Verified below, because this
+# binary is fetched over the network on first boot and then runs as root forever after.
+COMPOSE_SHA256=0c4591cf3b1ed039adcd803dbbeddf757375fc08c11245b0154135f838495a2f
 APP_DIR=/opt/beduno
 
 dnf update -y
@@ -18,6 +21,7 @@ mkdir -p /usr/local/lib/docker/cli-plugins
 curl -fsSL --retry 3 \
   "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-aarch64" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
+echo "${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c -
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version
 

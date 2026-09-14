@@ -178,7 +178,7 @@ class RoomOccupantsIntegrationTest extends IntegrationTestBase {
         jdbcTemplate.update("UPDATE stays SET status = 'EXPECTED_TODAY' WHERE id = ?", stay.id());
         var response = restTemplate.exchange("/api/v1/stays/" + stay.id() + "/check-in",
                 HttpMethod.POST, new HttpEntity<>(new CheckInRequest(null, null, null),
-                        authHeaders(Role.FRONT_DESK)), StayResponse.class);
+                        authHeadersAt(Role.FRONT_DESK, property.id())), StayResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 

@@ -9,9 +9,10 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * bed is null on every write path until phase 4 wires bed resolution into StayService -- until
- * then, BedOccupancyConstraint and BlockedRoomConstraint's bed-status check both treat a null bed
- * as a no-op rather than a violation. See the named-beds plan's Critical Implementation Details.
+ * bed is non-null on every write path: StayService resolves one before evaluating, and
+ * {@code stays.bed_id} is NOT NULL since V14. The two bed-aware constraints still tolerate a null
+ * bed by skipping their check, which is what unit tests exercising the other constraints rely on
+ * -- but it is a tolerance, not a transition state, so do not add a path that depends on it.
  */
 public record ConstraintContext(
         Worker worker,

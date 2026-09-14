@@ -50,7 +50,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move", HttpMethod.POST,
                     new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null),
-                            authHeaders(Role.PROPERTY_ADMIN)),
+                            authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     String.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -68,7 +68,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/move", HttpMethod.POST,
                     new HttpEntity<>(new MoveRequest(targetRoom.id(), null, null),
-                            authHeaders(Role.PROPERTY_ADMIN)),
+                            authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -97,7 +97,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/no-show", HttpMethod.POST,
                     new HttpEntity<>(new NoShowRequest("TRANSPORT_DELAY"),
-                            authHeaders(Role.FRONT_DESK)),
+                            authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -117,7 +117,7 @@ class StayGuardIntegrationTest extends IntegrationTestBase {
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/no-show", HttpMethod.POST,
                     new HttpEntity<>(new NoShowRequest("X".repeat(101)),
-                            authHeaders(Role.FRONT_DESK)),
+                            authHeadersAt(Role.FRONT_DESK, property.id())),
                     String.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

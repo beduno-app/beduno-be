@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BedAssignmentIntegrationTest extends IntegrationTestBase {
 
@@ -235,6 +236,211 @@ class BedAssignmentIntegrationTest extends IntegrationTestBase {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
             assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+    }
+
+    /**
+     * An open-ended stay (dateTo = null) runs forever, so it overlaps every later period on the
+     * same bed and every later period for the same worker. Before the null-aware overlap queries
+     * these requests bound LocalDate.MAX and failed with 500 regardless of bed availability.
+     */
+    @Nested
+    class OpenEndedStays {
+
+        @Test
+        void shouldCreateStay_whenBedIsFreeAndDateToIsNull() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody().dateTo()).isNull();
+            assertThat(response.getBody().bedId()).isEqualTo(bed.id());
+        }
+
+        @Test
+        void shouldRejectOpenEndedStay_whenBedOccupied() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(2), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectBoundedStay_whenBedHeldByOpenEndedStay() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), null);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusYears(2), LocalDate.now().plusYears(2).plusDays(7), null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldRejectOpenEndedStay_whenWorkerAlreadyBooked() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2);
+            var beds = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).stream()
+                    .sorted(Comparator.comparing(BedResponse::label)).toList();
+
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), beds.get(0).id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            var request = new CreateStayRequest(worker.id(), property.id(), room.id(), beds.get(1).id(),
+                    LocalDate.now().plusDays(2), null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    ErrorResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody().error()).isEqualTo("CONSTRAINT_VIOLATION");
+        }
+
+        @Test
+        void shouldCreateStay_whenOpenEndedStayStartsAfterExistingStayEnds() {
+            var worker1 = createWorker(DEFAULT_AGENCY_ID);
+            var worker2 = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+
+            var dateTo = LocalDate.now().plusDays(8);
+            createStay(DEFAULT_AGENCY_ID, worker1.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), dateTo);
+
+            var request = new CreateStayRequest(worker2.id(), property.id(), room.id(), bed.id(),
+                    dateTo, null, null, null);
+            var response = restTemplate.exchange(
+                    "/api/v1/stays", HttpMethod.POST,
+                    new HttpEntity<>(request, authHeaders(Role.AGENCY_ADMIN, DEFAULT_AGENCY_ID)),
+                    StayResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        }
+    }
+
+    /**
+     * The application's conflict checks are a COUNT followed by an INSERT under READ COMMITTED,
+     * with nothing in between: two planners submitting at the same instant both see the bed free.
+     * V15's exclusion constraints are the only thing that can close that window, so these assert
+     * the database refuses the overlap even when the application layer is bypassed entirely.
+     */
+    @Nested
+    class DatabaseLevelOverlapGuard {
+
+        @Test
+        void shouldRejectInsert_whenAnotherActiveStayHoldsTheBed() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var stay = createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            assertThatThrownBy(() -> insertStayDirectly(other.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12)))
+                    .hasMessageContaining("excl_stays_bed_period");
+            assertThat(stay.bedId()).isEqualTo(bed.id());
+        }
+
+        @Test
+        void shouldAllowInsert_whenTheHoldingStayIsTerminal() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var stay = createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+            jdbcTemplate.update("UPDATE stays SET status = 'CANCELLED' WHERE id = ?", stay.id());
+
+            // A cancelled stay places no claim on the bed, so the same period is free again.
+            insertStayDirectly(other.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12));
+        }
+
+        @Test
+        void shouldAllowInsert_whenPeriodsMeetButDoNotOverlap() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var other = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 1);
+            var bed = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).get(0);
+            var dateTo = LocalDate.now().plusDays(8);
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), bed.id(),
+                    LocalDate.now().plusDays(1), dateTo);
+
+            // Half-open [from, to): one stay's last night is the day before the next one's first.
+            // The constraint must agree with the application on this, or check-out day becomes
+            // unbookable.
+            insertStayDirectly(other.id(), property.id(), room.id(), bed.id(), dateTo, dateTo.plusDays(7));
+        }
+
+        @Test
+        void shouldRejectInsert_whenTheSameWorkerIsAlreadyBookedElsewhere() {
+            var worker = createWorker(DEFAULT_AGENCY_ID);
+            var property = createProperty(DEFAULT_AGENCY_ID);
+            var room = createRoom(DEFAULT_AGENCY_ID, property.id(), 2);
+            var beds = listBeds(DEFAULT_AGENCY_ID, property.id(), room.id()).stream()
+                    .sorted(Comparator.comparing(BedResponse::label)).toList();
+            createStay(DEFAULT_AGENCY_ID, worker.id(), property.id(), room.id(), beds.get(0).id(),
+                    LocalDate.now().plusDays(1), LocalDate.now().plusDays(8));
+
+            assertThatThrownBy(() -> insertStayDirectly(worker.id(), property.id(), room.id(), beds.get(1).id(),
+                    LocalDate.now().plusDays(4), LocalDate.now().plusDays(12)))
+                    .hasMessageContaining("excl_stays_worker_period");
+        }
+
+        /** Bypasses the service layer entirely, the way a concurrent request would arrive. */
+        private void insertStayDirectly(UUID workerId, UUID propertyId, UUID roomId, UUID bedId,
+                                         LocalDate dateFrom, LocalDate dateTo) {
+            jdbcTemplate.update(
+                    "INSERT INTO stays (agency_id, worker_id, property_id, room_id, bed_id, "
+                            + "bed_auto_assigned, date_from, date_to, status, version) "
+                            + "VALUES (?, ?, ?, ?, ?, false, ?, ?, 'PLANNED', 0)",
+                    DEFAULT_AGENCY_ID, workerId, propertyId, roomId, bedId, dateFrom, dateTo);
         }
     }
 
