@@ -7,7 +7,9 @@ import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.exception.UnauthorizedException;
 import com.beduno.user.User;
 import com.beduno.user.UserRepository;
+import com.beduno.user.UserStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,21 +22,36 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
+    /**
+     * Compared against when the email is unknown, so that the BCrypt cost is paid on every login
+     * attempt and an unknown address cannot be told from a known one by response time.
+     */
+    private static final String DUMMY_PASSWORD_HASH =
+            new BCryptPasswordEncoder().encode("this-value-is-never-a-password");
+
     private final UserRepository userRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        var user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new UnauthorizedException("error.auth.invalid_credentials"));
+        var user = userRepository.findByEmail(request.email());
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        // Always run a BCrypt comparison, against a fixed dummy hash when the email is unknown,
+        // so that the response time does not reveal whether an account exists. The dummy hash
+        // can never match a real password because it was encoded from a value no caller sends.
+        var passwordHash = user.map(User::getPasswordHash).orElse(DUMMY_PASSWORD_HASH);
+        var passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
+
+        // An inactive account is reported exactly like a wrong password: the caller must not be
+        // able to tell a deactivated colleague's address from an unknown one.
+        if (user.isEmpty() || !passwordMatches || user.get().getStatus() != UserStatus.ACTIVE) {
             throw new UnauthorizedException("error.auth.invalid_credentials");
         }
 
-        user.setLastLoginAt(Instant.now());
-        return buildAuthResponse(user);
+        var authenticated = user.get();
+        authenticated.setLastLoginAt(Instant.now());
+        return buildAuthResponse(authenticated);
     }
 
     public AuthResponse refresh(RefreshRequest request) {
@@ -48,6 +65,12 @@ public class AuthService {
         // resource — reporting it as 404 would leak whether an account was deleted.
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException("error.auth.invalid_refresh_token"));
+
+        // Deactivation has to bite here too, otherwise a refresh token issued before the
+        // deactivation keeps minting fresh pairs for its full 7-day life, indefinitely.
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new UnauthorizedException("error.auth.invalid_refresh_token");
+        }
 
         return buildAuthResponse(user);
     }

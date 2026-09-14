@@ -88,6 +88,12 @@ public class UserService {
             throw new ConflictException("error.user.email_exists");
         }
 
+        // The same lock-out guard deactivate() enforces. Without it, PUT is a way around
+        // DELETE: an admin could deactivate their own account and lose access on the spot.
+        if (request.status() == UserStatus.INACTIVE && user.getId().equals(currentUserId())) {
+            throw new ConflictException("error.user.cannot_deactivate_self");
+        }
+
         var losingAdminCoverage = user.getRole() == Role.AGENCY_ADMIN
                 && user.getStatus() == UserStatus.ACTIVE
                 && (request.role() != Role.AGENCY_ADMIN || request.status() != UserStatus.ACTIVE);
