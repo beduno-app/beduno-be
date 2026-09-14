@@ -259,7 +259,7 @@ class StayIntegrationTest extends IntegrationTestBase {
 
             var response = restTemplate.exchange(
                     "/api/v1/stays/" + stay.id(), HttpMethod.GET,
-                    new HttpEntity<>(authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 

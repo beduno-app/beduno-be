@@ -91,8 +91,9 @@ orchestrator updates Status as artifacts appear on disk.
 |---|---|---|---|---|---|---|
 | 1 | Constraint engine hardening | Prove bed conflicts are rejected end-to-end and constraint combinations/boundaries compose correctly | #1, #2 | integration | complete | `context/changes/testing-constraint-engine-hardening/` |
 | 2 | Authorization boundary closure | Prove property-scoping and cross-agency isolation hold across every write path, not just the 3 known-enforced endpoints | #3, #5 | integration | complete | `context/changes/testing-authorization-boundary-closure/` |
+| 2b | Property-scoping enforcement | Phase 2 covered cross-agency isolation but shipped its property-scoping cases as trip-wires asserting the *unenforced* behaviour, so "complete" read as "risk #3 closed" when it was not. Scoping is now enforced on stays, occupancy, inspection and exports (review SEC-02); the trip-wires assert 403 and `PropertyScopingIntegrationTest` covers the matrix | #3 | integration | complete | code review 2026-09-14 (SEC-02, SEC-03) |
 | 3 | Data-integrity guardrails | Prove RESTRICT-FK delete guards and migration/backfill correctness generalize to the next entity/migration in sequence | #4, #6 | integration | complete | `context/changes/testing-data-integrity-guardrails/` |
-| 4 | Rate-limit abuse hardening | Prove the IP-derivation/rate-limit path cannot be trivially bypassed via forged headers off-CloudFront | #7 | unit/slice | not started | — |
+| 4 | Rate-limit abuse hardening | Prove the IP-derivation/rate-limit path cannot be trivially bypassed via forged headers off-CloudFront | #7 | unit/slice | complete | Already covered by `RateLimitFilterTest.ForwardedHeaderSpoofing`, which predates this plan; recorded 2026-09-14 |
 
 **Status vocabulary** (fixed — parser literals): `not started` →
 `change opened` → `researched` → `planned` → `implementing` → `complete`.
@@ -109,7 +110,7 @@ current session.
 | migration testing | Flyway, via Testcontainers bootstrap | per `build.gradle.kts` | No dedicated pre-migration-data harness yet — see §3 Phase 3 |
 | static analysis | Checkstyle | 10.21.4, `isIgnoreFailures = false` | Blocks the build on lint failure; runs locally via `./gradlew build` |
 | e2e | none | n/a | API-only backend, no frontend in this repo; not a gap for this stack layer |
-| CI | none | n/a | No `.github/workflows/` or other CI config; `./gradlew build` runs locally only, not wired to this rollout |
+| CI | GitHub Actions | `.github/workflows/ci.yml` | Committed 2026-09-10, before this plan's last update, which wrongly recorded its absence. Runs `./gradlew build` (tests + checkstyle), validates the Gradle wrapper, shellchecks `deploy/*.sh` at `--severity=warning`, and renders the cloud-init blob |
 
 **Stack grounding tools (current session):**
 - Docs: none available — no Context7 or framework-docs MCP exposed this session; checked: 2026-09-11
@@ -132,10 +133,10 @@ phase lands; before that, the gate is `planned`.
 | delete-guard + migration integration coverage | local | required after §3 Phase 3 | RESTRICT-FK 500s and migration data corruption |
 | rate-limit filter unit/slice test | local | required after §3 Phase 4 | IP-spoofing rate-limit bypass |
 
-No CI pipeline exists; all gates above run locally only (see §4). No
-rollout phase in this plan wires CI — that gap was not raised as a top
-risk in discovery or the interview, so it is out of scope here rather
-than aspirational.
+The gates above run locally and in CI (`.github/workflows/ci.yml`, see §4).
+No rollout phase in this plan wired CI: the pipeline was committed on
+2026-09-10, independently of this rollout and before this plan's last
+update, which recorded its absence in error.
 
 ## 6. Cookbook Patterns
 

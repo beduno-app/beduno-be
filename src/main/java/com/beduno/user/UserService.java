@@ -7,14 +7,13 @@ import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.model.PageResponse;
 import com.beduno.common.model.SortFields;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.user.dto.CreateUserRequest;
 import com.beduno.user.dto.UpdateUserRequest;
 import com.beduno.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,7 +73,7 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setStatus(UserStatus.ACTIVE);
         user = userRepository.save(user);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.USER, user.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.USER, user.getId(),
                 AuditAction.CREATED, null, snapshot(user), null);
         return userMapper.toResponse(user);
     }
@@ -90,7 +89,7 @@ public class UserService {
 
         // The same lock-out guard deactivate() enforces. Without it, PUT is a way around
         // DELETE: an admin could deactivate their own account and lose access on the spot.
-        if (request.status() == UserStatus.INACTIVE && user.getId().equals(currentUserId())) {
+        if (request.status() == UserStatus.INACTIVE && user.getId().equals(SecurityUtils.currentUserId())) {
             throw new ConflictException("error.user.cannot_deactivate_self");
         }
 
@@ -108,7 +107,7 @@ public class UserService {
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
         user = userRepository.save(user);
-        auditService.log(user.getAgencyId(), currentUserId(), AuditEntityType.USER, user.getId(),
+        auditService.log(user.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.USER, user.getId(),
                 AuditAction.UPDATED, previous, snapshot(user), null);
         return userMapper.toResponse(user);
     }
@@ -122,7 +121,7 @@ public class UserService {
     public void deactivate(UUID id) {
         var user = getUserOrThrow(id);
 
-        if (user.getId().equals(currentUserId())) {
+        if (user.getId().equals(SecurityUtils.currentUserId())) {
             throw new ConflictException("error.user.cannot_deactivate_self");
         }
         if (user.getStatus() == UserStatus.INACTIVE) {
@@ -139,7 +138,7 @@ public class UserService {
         // hour); that is inherent to a stateless access token and is the bound the design accepts.
         user.setTokenVersion(user.getTokenVersion() + 1);
         user = userRepository.save(user);
-        auditService.log(user.getAgencyId(), currentUserId(), AuditEntityType.USER, user.getId(),
+        auditService.log(user.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.USER, user.getId(),
                 AuditAction.UPDATED, previous, snapshot(user), "deactivated");
     }
 
@@ -151,13 +150,6 @@ public class UserService {
         }
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
     private Map<String, Object> snapshot(User user) {
         var map = new LinkedHashMap<String, Object>();

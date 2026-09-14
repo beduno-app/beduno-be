@@ -57,7 +57,7 @@ public class OccupancyController {
 
     @Operation(summary = "Inspection roster", description = "Room-by-room roster for nightly inspection")
     @GetMapping("/inspection")
-    @PreAuthorize("hasRole('PROPERTY_ADMIN')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN')")
     public ResponseEntity<List<InspectionRoomEntry>> getInspectionRoster(
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date) {
@@ -66,7 +66,7 @@ public class OccupancyController {
 
     @Operation(summary = "Submit inspection report", description = "Reports discrepancies: expected workers not present, unexpected workers present")
     @PostMapping("/inspection")
-    @PreAuthorize("hasRole('PROPERTY_ADMIN')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN')")
     public ResponseEntity<InspectionDiscrepancyResponse> submitInspectionReport(
             @PathVariable UUID propertyId,
             @RequestParam(required = false) LocalDate date,

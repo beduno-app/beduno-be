@@ -60,7 +60,8 @@ class AuditIntegrationTest extends IntegrationTestBase {
 
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(null, null, null), authHeaders(Role.FRONT_DESK)),
+                    new HttpEntity<>(new CheckInRequest(null, null, null),
+                            authHeadersAt(Role.FRONT_DESK, property.id())),
                     StayResponse.class
             );
 
@@ -88,7 +89,8 @@ class AuditIntegrationTest extends IntegrationTestBase {
 
             restTemplate.exchange(
                     "/api/v1/stays/" + stay.id() + "/check-in", HttpMethod.POST,
-                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null, null), authHeaders(Role.PROPERTY_ADMIN)),
+                    new HttpEntity<>(new CheckInRequest(altRoom.id(), null, null),
+                            authHeadersAt(Role.PROPERTY_ADMIN, property.id())),
                     StayResponse.class
             );
 

@@ -19,7 +19,7 @@ import com.beduno.audit.AuditService;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.model.PageResponse;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.property.PropertyService;
 import com.beduno.room.dto.CreateRoomRequest;
@@ -28,7 +28,6 @@ import com.beduno.room.dto.UpdateRoomRequest;
 import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,7 +94,7 @@ public class RoomService {
         room.setAgencyId(agencyId);
         room.setPropertyId(propertyId);
         room = roomRepository.save(room);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.ROOM, room.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.CREATED, null, snapshot(room), null);
         // A room that was just created has no beds and no stays, but occupants must still be an
         // empty list: the client types it as an array and a null is not one.
@@ -113,7 +112,7 @@ public class RoomService {
         var previous = snapshot(room);
         roomMapper.updateEntity(request, room);
         room = roomRepository.save(room);
-        auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
+        auditService.log(room.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.UPDATED, previous, snapshot(room), null);
         // Unlike create, an existing room can already have beds and occupants, so this reads the
         // real counts rather than assuming zero -- editing a room must not blank either one out.
@@ -136,17 +135,10 @@ public class RoomService {
 
         var previous = snapshot(room);
         roomRepository.delete(room);
-        auditService.log(room.getAgencyId(), currentUserId(), AuditEntityType.ROOM, room.getId(),
+        auditService.log(room.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.ROOM, room.getId(),
                 AuditAction.DELETED, previous, null, null);
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
     /**
      * Occupancy means CHECKED_IN today -- who is actually in the room -- matching what the

@@ -102,6 +102,19 @@ public abstract class IntegrationTestBase {
         return authHeaders(role, DEFAULT_AGENCY_ID);
     }
 
+    /**
+     * Headers for a PROPERTY_ADMIN or FRONT_DESK assigned to one property.
+     *
+     * <p>Those two roles are scoped to their {@code assignedPropertyIds}, so a token carrying an
+     * empty list grants access to no property at all -- which is what {@link #authHeaders(Role)}
+     * produces. Any test that exercises a property-scoped endpoint as one of these roles has to
+     * say which property the caller works at. AGENCY_ADMIN and AGENCY_PLANNER are agency-wide and
+     * do not need this.
+     */
+    protected HttpHeaders authHeadersAt(Role role, UUID propertyId) {
+        return authHeaders(role, DEFAULT_AGENCY_ID, new UUID[]{propertyId});
+    }
+
     protected void ensureAgencyExists(UUID agencyId) {
         jdbcTemplate.update(
                 "INSERT INTO agencies (id, name, status) VALUES (?, ?, 'ACTIVE') ON CONFLICT (id) DO NOTHING",

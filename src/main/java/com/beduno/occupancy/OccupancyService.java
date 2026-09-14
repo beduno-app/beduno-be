@@ -4,6 +4,7 @@ import com.beduno.bed.Bed;
 import com.beduno.bed.BedRepository;
 import com.beduno.bed.BedStatus;
 import com.beduno.common.exception.NotFoundException;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.occupancy.dto.InspectionDiscrepancyResponse;
 import com.beduno.occupancy.dto.InspectionReportRequest;
@@ -260,6 +261,11 @@ public class OccupancyService {
         if (!propertyRepository.existsByIdAndAgencyId(propertyId, agencyId)) {
             throw new NotFoundException("error.property.not_found");
         }
+        // Occupancy, exceptions, the inspection roster and the inspection report were all
+        // agency-wide: a PROPERTY_ADMIN or FRONT_DESK assigned to one property could read every
+        // other property's occupants by id. Checked after existence so a caller cannot use the
+        // difference between 403 and 404 to probe which properties exist.
+        SecurityUtils.requirePropertyAccess(propertyId);
     }
 
     private Map<UUID, Worker> loadWorkers(List<Stay> stays, UUID agencyId) {

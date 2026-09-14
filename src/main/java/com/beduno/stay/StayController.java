@@ -79,7 +79,7 @@ public class StayController {
     @Operation(summary = "Check in", description = "Transitions an expected_today stay to checked_in. Runs constraint engine. Optionally overrides room.")
     @ApiResponse(responseCode = "422", description = "Constraint violation — re-submit with overrideReason to force")
     @PostMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> checkIn(@PathVariable UUID id,
                                                 @Valid @RequestBody CheckInRequest request) {
         return ResponseEntity.ok(stayService.checkIn(id, request));
@@ -87,7 +87,7 @@ public class StayController {
 
     @Operation(summary = "No-show", description = "Mark a stay as no_show with a reason tag")
     @PostMapping("/{id}/no-show")
-    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> noShow(@PathVariable UUID id,
                                                @Valid @RequestBody NoShowRequest request) {
         return ResponseEntity.ok(stayService.noShow(id, request));
@@ -95,7 +95,7 @@ public class StayController {
 
     @Operation(summary = "Check out", description = "Transitions a checked_in stay to checked_out. Sets actual departure date if different from planned.")
     @PostMapping("/{id}/check-out")
-    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> checkOut(@PathVariable UUID id,
                                                  @Valid @RequestBody CheckOutRequest request) {
         return ResponseEntity.ok(stayService.checkOut(id, request));
@@ -104,7 +104,7 @@ public class StayController {
     @Operation(summary = "Move worker to another room", description = "Atomic operation: checks out from current room, creates new stay in target room")
     @ApiResponse(responseCode = "422", description = "Constraint violation on target room")
     @PostMapping("/{id}/move")
-    @PreAuthorize("hasAnyRole('PROPERTY_ADMIN', 'FRONT_DESK')")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<StayResponse> move(@PathVariable UUID id,
                                              @Valid @RequestBody MoveRequest request) {
         return ResponseEntity.ok(stayService.move(id, request));
@@ -146,7 +146,10 @@ public class StayController {
 
     @Operation(summary = "Bulk checkout stays", description = "Checks out multiple checked_in stays in one call. Returns per-item results.")
     @PostMapping("/bulk-checkout")
-    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER', 'PROPERTY_ADMIN', 'FRONT_DESK')")
+    // Deliberately the same role set as POST /{id}/check-out. It used to include AGENCY_PLANNER,
+    // so a planner forbidden from checking one stay out could check the same stay out in a batch
+    // of one. Narrowed rather than widened: a planner plans, the front desk operates.
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'PROPERTY_ADMIN', 'FRONT_DESK')")
     public ResponseEntity<BulkCheckoutResult> bulkCheckout(@Valid @RequestBody BulkCheckoutRequest request) {
         return ResponseEntity.ok(stayService.bulkCheckout(request));
     }

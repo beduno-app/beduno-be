@@ -8,7 +8,7 @@ import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.stay.StayRepository;
 import com.beduno.stay.StayStatus;
@@ -20,7 +20,6 @@ import com.beduno.worker.dto.WorkerResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -111,7 +110,7 @@ public class WorkerService {
         var worker = workerMapper.toEntity(request);
         worker.setAgencyId(agencyId);
         worker = workerRepository.save(worker);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.CREATED, null, snapshot(worker), null);
         return workerMapper.toResponse(worker);
     }
@@ -122,7 +121,7 @@ public class WorkerService {
         var previous = snapshot(worker);
         workerMapper.updateEntity(request, worker);
         worker = workerRepository.save(worker);
-        auditService.log(worker.getAgencyId(), currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(worker.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.UPDATED, previous, snapshot(worker), null);
         return workerMapper.toResponse(worker);
     }
@@ -150,14 +149,14 @@ public class WorkerService {
         worker.setStatus(WorkerStatus.DELETED);
         worker.setDeletedAt(Instant.now());
         workerRepository.save(worker);
-        auditService.log(worker.getAgencyId(), currentUserId(), AuditEntityType.WORKER, worker.getId(),
+        auditService.log(worker.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.WORKER, worker.getId(),
                 AuditAction.DELETED, previous, snapshot(worker), null);
     }
 
     @Transactional
     public WorkerImportResult importCsv(MultipartFile file) {
         var agencyId = TenantContext.requireAgencyId();
-        var actorId = currentUserId();
+        var actorId = SecurityUtils.currentUserId();
         int created = 0;
         int skipped = 0;
         var errors = new ArrayList<WorkerImportError>();
@@ -293,13 +292,6 @@ public class WorkerService {
         return null;
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
     private Map<String, Object> snapshot(Worker worker) {
         var map = new LinkedHashMap<String, Object>();

@@ -7,7 +7,7 @@ import com.beduno.audit.AuditService;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.model.PageResponse;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.property.dto.CreatePropertyRequest;
 import com.beduno.property.dto.PropertyResponse;
@@ -16,7 +16,6 @@ import com.beduno.room.RoomRepository;
 import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,7 +66,7 @@ public class PropertyService {
         var property = propertyMapper.toEntity(request);
         property.setAgencyId(agencyId);
         property = propertyRepository.save(property);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.PROPERTY, property.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.PROPERTY, property.getId(),
                 AuditAction.CREATED, null, snapshot(property), null);
         return propertyMapper.toResponse(property);
     }
@@ -78,7 +77,7 @@ public class PropertyService {
         var previous = snapshot(property);
         propertyMapper.updateEntity(request, property);
         property = propertyRepository.save(property);
-        auditService.log(property.getAgencyId(), currentUserId(), AuditEntityType.PROPERTY, property.getId(),
+        auditService.log(property.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.PROPERTY, property.getId(),
                 AuditAction.UPDATED, previous, snapshot(property), null);
         return propertyMapper.toResponse(property);
     }
@@ -100,17 +99,10 @@ public class PropertyService {
 
         var previous = snapshot(property);
         propertyRepository.delete(property);
-        auditService.log(property.getAgencyId(), currentUserId(), AuditEntityType.PROPERTY, property.getId(),
+        auditService.log(property.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.PROPERTY, property.getId(),
                 AuditAction.DELETED, previous, null, null);
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
     private Map<String, Object> snapshot(Property property) {
         var map = new LinkedHashMap<String, Object>();

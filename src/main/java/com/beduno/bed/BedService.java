@@ -14,14 +14,13 @@ import com.beduno.bed.dto.CreateBedRequest;
 import com.beduno.bed.dto.UpdateBedRequest;
 import com.beduno.common.exception.ConflictException;
 import com.beduno.common.exception.NotFoundException;
-import com.beduno.common.security.CurrentUser;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.property.PropertyService;
 import com.beduno.room.Room;
 import com.beduno.room.RoomRepository;
 import com.beduno.stay.StayRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,7 +65,7 @@ public class BedService {
         bed.setRoomId(roomId);
         bed.setLabel(request.label());
         bed = bedRepository.save(bed);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.BED, bed.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.BED, bed.getId(),
                 AuditAction.CREATED, null, snapshot(bed), null);
         return bedMapper.toResponse(bed);
     }
@@ -92,7 +91,7 @@ public class BedService {
             bed.setLabel(String.valueOf(nextLabel + i));
             created.add(bedRepository.save(bed));
         }
-        created.forEach(bed -> auditService.log(agencyId, currentUserId(), AuditEntityType.BED,
+        created.forEach(bed -> auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.BED,
                 bed.getId(), AuditAction.CREATED, null, snapshot(bed), null));
         return created.stream().map(bedMapper::toResponse).toList();
     }
@@ -126,7 +125,7 @@ public class BedService {
         var previous = snapshot(bed);
         bedMapper.updateEntity(request, bed);
         bed = bedRepository.save(bed);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.BED, bed.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.BED, bed.getId(),
                 AuditAction.UPDATED, previous, snapshot(bed), null);
         return bedMapper.toResponse(bed);
     }
@@ -144,7 +143,7 @@ public class BedService {
 
         var previous = snapshot(bed);
         bedRepository.delete(bed);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.BED, bed.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.BED, bed.getId(),
                 AuditAction.DELETED, previous, null, null);
     }
 
@@ -159,13 +158,6 @@ public class BedService {
                 .orElseThrow(() -> new NotFoundException("error.bed.not_found"));
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
     private Map<String, Object> snapshot(Bed bed) {
         var map = new LinkedHashMap<String, Object>();

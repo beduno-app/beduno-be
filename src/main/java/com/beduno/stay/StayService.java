@@ -14,6 +14,7 @@ import com.beduno.common.exception.ConstraintViolationException.ViolationDetail;
 import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.exception.ValidationException;
 import com.beduno.common.model.PageResponse;
+import com.beduno.common.security.SecurityUtils;
 import com.beduno.common.security.TenantContext;
 import com.beduno.property.Property;
 import com.beduno.property.PropertyRepository;
@@ -22,7 +23,6 @@ import com.beduno.room.RoomRepository;
 import com.beduno.stay.constraint.ConstraintContext;
 import com.beduno.stay.constraint.ConstraintEngine;
 import com.beduno.stay.constraint.HardViolation;
-import com.beduno.common.security.CurrentUser;
 import com.beduno.stay.dto.BulkAssignRequest;
 import com.beduno.stay.dto.BulkAssignResult;
 import com.beduno.stay.dto.BulkAssignResult.AssignmentResult;
@@ -42,7 +42,6 @@ import com.beduno.worker.WorkerStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -101,6 +100,7 @@ public class StayService {
     public StayResponse create(CreateStayRequest request) {
         var agencyId = TenantContext.requireAgencyId();
 
+        SecurityUtils.requirePropertyAccess(request.propertyId());
         var worker = getWorkerOrThrow(request.workerId(), agencyId);
         var property = getPropertyOrThrow(request.propertyId(), agencyId);
         var room = getRoomInPropertyOrThrow(request.roomId(), request.propertyId(), agencyId);
@@ -117,7 +117,7 @@ public class StayService {
         stay.setBedAutoAssigned(assignment.autoAssigned());
         stay.setStatus(arrivalStatusFor(request.dateFrom()));
         stay = stayRepository.save(stay);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CREATED, null, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
@@ -151,7 +151,7 @@ public class StayService {
         // arrival for the whole intervening week.
         stay.setStatus(arrivalStatusFor(stay.getDateFrom()));
         stay = stayRepository.save(stay);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.UPDATED, previous, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
@@ -159,6 +159,7 @@ public class StayService {
     @Transactional(readOnly = true)
     public List<StayResponse> getArrivals(UUID propertyId, LocalDate date) {
         var agencyId = TenantContext.requireAgencyId();
+        SecurityUtils.requirePropertyAccess(propertyId);
         return stayRepository.findArrivals(agencyId, propertyId, date)
                 .stream().map(stayMapper::toResponse).toList();
     }
@@ -194,9 +195,9 @@ public class StayService {
         stay.setBedId(assignment.bed().getId());
         stay.setBedAutoAssigned(assignment.autoAssigned());
         stay.setStatus(StayStatus.CHECKED_IN);
-        stay.setConfirmedByUserId(currentUserId());
+        stay.setConfirmedByUserId(SecurityUtils.currentUserId());
         stay = stayRepository.save(stay);
-        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(stay.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CHECKED_IN, previous, snapshot(stay), request.overrideReason());
         return stayMapper.toResponse(stay);
     }
@@ -211,7 +212,7 @@ public class StayService {
         stay.setStatus(StayStatus.NO_SHOW);
         stay.setNoShowReason(request.noShowReason());
         stay = stayRepository.save(stay);
-        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(stay.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.NO_SHOW, previous, snapshot(stay), request.noShowReason());
         return stayMapper.toResponse(stay);
     }
@@ -260,7 +261,7 @@ public class StayService {
         // unflushed in the session, both rows are active at once and the database's overlap
         // constraints reject the pair.
         stayRepository.saveAndFlush(stay);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CHECKED_OUT, previousStay, snapshot(stay), null);
 
         var newStay = new Stay();
@@ -273,9 +274,9 @@ public class StayService {
         newStay.setDateFrom(today);
         newStay.setDateTo(originalDateTo);
         newStay.setStatus(StayStatus.CHECKED_IN);
-        newStay.setConfirmedByUserId(currentUserId());
+        newStay.setConfirmedByUserId(SecurityUtils.currentUserId());
         newStay = stayRepository.save(newStay);
-        auditService.log(agencyId, currentUserId(), AuditEntityType.STAY, newStay.getId(),
+        auditService.log(agencyId, SecurityUtils.currentUserId(), AuditEntityType.STAY, newStay.getId(),
                 AuditAction.MOVED, null, snapshot(newStay), request.overrideReason());
         return stayMapper.toResponse(newStay);
     }
@@ -298,7 +299,7 @@ public class StayService {
         }
         stay.setStatus(StayStatus.CHECKED_OUT);
         stay = stayRepository.save(stay);
-        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(stay.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CHECKED_OUT, previous, snapshot(stay), null);
         return stayMapper.toResponse(stay);
     }
@@ -333,7 +334,7 @@ public class StayService {
         var previous = snapshot(stay);
         stay.setStatus(StayStatus.CANCELLED);
         stayRepository.save(stay);
-        auditService.log(stay.getAgencyId(), currentUserId(), AuditEntityType.STAY, stay.getId(),
+        auditService.log(stay.getAgencyId(), SecurityUtils.currentUserId(), AuditEntityType.STAY, stay.getId(),
                 AuditAction.CANCELLED, previous, snapshot(stay), null);
     }
 
@@ -356,7 +357,7 @@ public class StayService {
     @Transactional
     public BulkAssignResult bulkAssign(BulkAssignRequest request) {
         var agencyId = TenantContext.requireAgencyId();
-        var actorId = currentUserId();
+        var actorId = SecurityUtils.currentUserId();
         var results = new ArrayList<AssignmentResult>();
         int created = 0;
         int errors = 0;
@@ -364,6 +365,7 @@ public class StayService {
         for (int i = 0; i < request.assignments().size(); i++) {
             var a = request.assignments().get(i);
             try {
+                SecurityUtils.requirePropertyAccess(a.propertyId());
                 var worker = getWorkerOrThrow(a.workerId(), agencyId);
                 var property = getPropertyOrThrow(a.propertyId(), agencyId);
                 var room = getRoomInPropertyOrThrow(a.roomId(), a.propertyId(), agencyId);
@@ -401,7 +403,7 @@ public class StayService {
     @Transactional
     public BulkCheckoutResult bulkCheckout(BulkCheckoutRequest request) {
         var agencyId = TenantContext.requireAgencyId();
-        var actorId = currentUserId();
+        var actorId = SecurityUtils.currentUserId();
         var results = new ArrayList<CheckoutResult>();
         int checkedOut = 0;
         int errors = 0;
@@ -547,18 +549,19 @@ public class StayService {
         return dateFrom.isAfter(LocalDate.now(clock)) ? StayStatus.PLANNED : StayStatus.EXPECTED_TODAY;
     }
 
-    private UUID currentUserId() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CurrentUser currentUser) {
-            return currentUser.userId();
-        }
-        return null;
-    }
 
+    /**
+     * Every single-stay operation -- read, update, cancel, check-in, check-out, no-show, move --
+     * resolves the stay through here, which is why the property-scope check belongs here rather
+     * than repeated at seven call sites. A PROPERTY_ADMIN or FRONT_DESK holding a token for
+     * property A could previously operate on any stay in the agency, including one at property B.
+     */
     private Stay getStayOrThrow(UUID id) {
         var agencyId = TenantContext.requireAgencyId();
-        return stayRepository.findByIdAndAgencyId(id, agencyId)
+        var stay = stayRepository.findByIdAndAgencyId(id, agencyId)
                 .orElseThrow(() -> new NotFoundException("error.stay.not_found"));
+        SecurityUtils.requirePropertyAccess(stay.getPropertyId());
+        return stay;
     }
 
     private Worker getWorkerOrThrow(UUID workerId, UUID agencyId) {
