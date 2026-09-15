@@ -502,3 +502,5 @@ details unless the caller is authorized). `/actuator/info` is exposed but is
 **not** on the security permit list, so it requires authentication like any
 other endpoint. Only `health` and `info` are exposed via
 `management.endpoints.web.exposure.include` — there is no `/actuator/metrics`.
+
+<!-- smoke test: intentionally trivial change to trigger the PR Review workflow -->

@@ -114,6 +114,34 @@ class AuditIntegrationTest extends IntegrationTestBase {
             assertThat(events).extracting(AuditEventResponse::entityId).containsOnly(first.id());
             assertThat(events).extracting(AuditEventResponse::entityId).doesNotContain(second.id());
         }
+
+        @Test
+        void shouldReturnEvent_whenFetchedById() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+            var checkIn = auditFor(AuditEntityType.STAY, stay.id()).stream()
+                    .filter(e -> e.action() == AuditAction.CREATED).findFirst().orElseThrow();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/" + checkIn.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), AuditEventResponse.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().id()).isEqualTo(checkIn.id());
+            assertThat(response.getBody().entityId()).isEqualTo(stay.id());
+        }
+
+        @Test
+        void shouldReturnNotFound_whenEventDoesNotExist() {
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/" + UUID.randomUUID(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
     }
 
     @Nested
@@ -127,6 +155,53 @@ class AuditIntegrationTest extends IntegrationTestBase {
             );
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        @Test
+        void shouldReturnForbidden_whenFetchingByIdAsFrontDesk() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+            var event = auditFor(AuditEntityType.STAY, stay.id()).getFirst();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/" + event.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.FRONT_DESK)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        /**
+         * Same back-door concern as the list endpoint, but for the by-id lookup: a planner who
+         * knows (or guesses) a USER event's id must not be able to read it directly.
+         */
+        @Test
+        void shouldReturnNotFound_whenFetchingUserEventByIdAsPlanner() {
+            var created = createUser();
+            var event = audit("?entityType=USER&entityId=" + created.id(), Role.AGENCY_ADMIN).getFirst();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/" + event.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_PLANNER)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @Test
+        void shouldReturnNotFound_whenFetchingEventFromOtherAgency() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+            var event = auditFor(AuditEntityType.STAY, stay.id()).getFirst();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/" + event.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID)), String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
 
         /**
@@ -159,6 +234,52 @@ class AuditIntegrationTest extends IntegrationTestBase {
             var otherAgencyView = audit("?entityType=STAY&size=200", Role.AGENCY_ADMIN, OTHER_AGENCY_ID);
 
             assertThat(otherAgencyView).extracting(AuditEventResponse::entityId).doesNotContain(stay.id());
+        }
+
+        @Test
+        void shouldReturnRecentEvents_whenEntityHasSomeInThisAgency() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + stay.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).extracting(AuditEventResponse::entityId).containsOnly(stay.id());
+        }
+
+        @Test
+        void shouldNotReturnRecentEvents_whenEntityBelongsToOtherAgency() {
+            var property = createProperty();
+            var room = createRoom(property.id(), 4);
+            var stay = plannedStay(property.id(), room.id());
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + stay.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_ADMIN, OTHER_AGENCY_ID)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isEmpty();
+        }
+
+        @Test
+        void shouldNotReturnRecentUserEvents_whenCallerIsPlanner() {
+            var created = createUser();
+
+            var response = restTemplate.exchange(
+                    "/api/v1/audit/recent?entityId=" + created.id(), HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(Role.AGENCY_PLANNER)),
+                    new ParameterizedTypeReference<List<AuditEventResponse>>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isEmpty();
         }
     }
 

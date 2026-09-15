@@ -12,11 +12,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "Audit", description = "Immutable audit trail of all changes")
@@ -39,5 +41,19 @@ public class AuditController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant dateTo,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(auditService.findAll(entityType, entityId, actorUserId, dateFrom, dateTo, pageable));
+    }
+
+    @Operation(summary = "Get an audit event", description = "Fetches a single audit event by id")
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER')")
+    public ResponseEntity<AuditEventResponse> findById(@PathVariable UUID id) {
+        return ResponseEntity.ok(auditService.findById(id));
+    }
+
+    @Operation(summary = "Recent events for an entity", description = "Last 5 audit events for an entity, newest first")
+    @GetMapping("/recent")
+    @PreAuthorize("hasAnyRole('AGENCY_ADMIN', 'AGENCY_PLANNER')")
+    public ResponseEntity<List<AuditEventResponse>> findRecentForEntity(@RequestParam UUID entityId) {
+        return ResponseEntity.ok(auditService.findRecentForEntity(entityId));
     }
 }

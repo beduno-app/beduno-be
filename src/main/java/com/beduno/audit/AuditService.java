@@ -3,6 +3,7 @@ package com.beduno.audit;
 import com.beduno.common.model.SortFields;
 import com.beduno.audit.dto.AuditEventResponse;
 import com.beduno.common.model.PageResponse;
+import com.beduno.common.exception.NotFoundException;
 import com.beduno.common.security.CurrentUser;
 import com.beduno.common.security.TenantContext;
 import com.beduno.user.Role;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -58,6 +60,34 @@ public class AuditService {
                 agencyId, entityType, hiddenEntityType(), entityId, actorUserId, dateFrom, dateTo,
                 SortFields.translate(pageable, SORTABLE));
         return PageResponse.of(page.map(auditMapper::toResponse));
+    }
+
+    /**
+     * Same visibility rule as {@link #findAll}: a USER event is invisible to anyone but an
+     * AGENCY_ADMIN, so drilling into one directly by id can't be used to route around the filter
+     * the list endpoint applies.
+     */
+    @Transactional(readOnly = true)
+    public AuditEventResponse findById(UUID id) {
+        var agencyId = TenantContext.requireAgencyId();
+        return auditRepository.findByIdAndAgencyId(id, agencyId)
+                .filter(event -> event.getEntityType() != hiddenEntityType())
+                .map(auditMapper::toResponse)
+                .orElseThrow(() -> new NotFoundException("error.audit.not_found"));
+    }
+
+    /**
+     * A quick "what just happened to this entity" widget for the entity's detail page -- the last
+     * 5 events, newest first, without the filter/pagination overhead of {@link #findAll}.
+     */
+    @Transactional(readOnly = true)
+    public List<AuditEventResponse> findRecentForEntity(UUID entityId) {
+        var agencyId = TenantContext.requireAgencyId();
+        var hidden = hiddenEntityType();
+        return auditRepository.findTop5ByAgencyIdAndEntityIdOrderByCreatedAtDesc(agencyId, entityId).stream()
+                .filter(event -> event.getEntityType() != hidden)
+                .map(auditMapper::toResponse)
+                .toList();
     }
 
     /**
